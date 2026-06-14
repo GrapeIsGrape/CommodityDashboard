@@ -27,7 +27,7 @@ One shared Postgres, two independent writers to **separate tables**:
 - **DB:** PostgreSQL (single shared database)
 - **Packaging:** Docker Compose — services `postgres`, `etl`, `dashboard`
 - **Deploy targets:** Railway **or** Synology NAS, no code changes between them
-- **Migrations:** Alembic or plain numbered SQL files
+- **Migrations:** Alembic (decided in #1) — config-as-code in `migrations/`, DB URL built from env in `env.py`
 - **Scheduler:** swappable (Compose cron / Railway cron / DSM Task Scheduler) — not yet chosen
 
 External data sources: **FRED** (macro), **EIA** (energy inventories), **USDA NASS/WASDE** (grains), **CFTC** (COT positioning), **yfinance** (prices, option-chain IV, `^VIX`/`^GVZ`/`^OVX`). All free. Flag anything needing a paid feed or scraping (metals warehouse stocks, multi-expiry futures curves).
@@ -85,10 +85,10 @@ Precious metals (GC/GLD, SI/SLV, PL, PA), base metals (HG, Aluminum, Zinc, Nicke
 
 ## 6. Build status & phased plan
 
-**Stop after each phase for review.** Current position: **Phase 0 done; Phase 1 not started — no application code exists yet.**
+**Stop after each phase for review.** Current position: **Phase 0 done; Phase 1 scaffold done (#1) — repo skeleton runs on Railway; real table schemas still pending (#2).**
 
 - **Phase 0 — Volatility data spike — ✅ DONE (2026-06-14).** De-risked: **yfinance** delivers option-chain IV + vol indices + price history, **no IBKR or paid feed needed for v1**. Consequences: IV via optionable ETF proxies (not futures symbols); IV rank/percentile must be accrued from our own daily snapshots (Yahoo gives no IV history); keep the source behind a swappable interface. Throwaway proof: [spike_iv.py](spike_iv.py).
-- **Phase 1 — Foundation & schema** (next): repo scaffold, Docker Compose, `.env.example`, symbol config, migrations for `prices`, `macro_metrics`, `inventories`, `cot`, `iv_metrics`, `curve_shape`, placeholder `sentiment_*`.
+- **Phase 1 — Foundation & schema.** Scaffold ✅ DONE (#1, 2026-06-14): Docker Compose (`postgres`/`etl`/`dashboard`), `.env.example`, symbol config, Alembic + empty `0001_baseline`, FastAPI boot page + `/health`; deployed on Railway. **Still pending (#2):** migrations for `prices`, `macro_metrics`, `inventories`, `cot`, `iv_metrics`, `curve_shape`, placeholder `sentiment_*`.
 - **Phase 2 — Free-data ETL:** FRED, EIA, USDA, CFTC. Idempotent, scheduled, backfilled.
 - **Phase 3 — Volatility & positioning ETL:** wire IV → `iv_metrics`, add curve shape and OVX/GVZ/VIX.
 - **Phase 4 — Dashboard (FastAPI):** four panels + macro sub-panel + empty sentiment panel.
@@ -100,6 +100,15 @@ Precious metals (GC/GLD, SI/SLV, PL, PA), base metals (HG, Aluminum, Zinc, Nicke
 
 - **GitHub:** `GrapeIsGrape/CommodityDashboard` (the issue-management skills target this repo).
 - **Workflow:** ticket-driven — `ba` (spec the ticket) → `implement` (build it) → `close-issue` (verify & close). `enrich-ticket`, `debug`, `list-issues` support the loop.
-- **Repository structure:** _not yet established — Phase 1 will create it. Update this section once the scaffold exists (services, migrations dir, ETL modules, symbol config path)._
+- **Repository structure:**
+  - `docker-compose.yml` — `postgres` / `etl` / `dashboard`, Postgres on a named `pgdata` volume
+  - `.env.example` — every env var (DB host/port/name/user/password, `DASHBOARD_PORT`, FRED/EIA/USDA/CFTC key placeholders); `.env` git-ignored
+  - `config/symbols.yaml` — v1 commodity universe + commodity→optionable-ETF-proxy mapping + macro-context & vol-index tickers (the canonical symbol list)
+  - `common/config.py` — shared: `get_database_url()` (env→SQLAlchemy URL) + `load_symbols()`
+  - `dashboard/` — FastAPI app (`main.py`: `/` boot page, `/health` Postgres check), `Dockerfile`, `requirements.txt`
+  - `etl/` — `run.py` (entrypoint: applies migrations then idles — no scheduler yet), `sources/` (one module per source, Phase 2+), `Dockerfile`, `requirements.txt`
+  - `migrations/` — Alembic: `alembic.ini`, `env.py`, `script.py.mako`, `versions/0001_baseline.py` (empty baseline)
+  - `tests/` — pytest (`test_config.py`)
+- **Deployment (Railway):** GitHub repo backs three services — `Postgres` (managed), and `dashboard` + `etl` both built from the **same repo** with Builder=Dockerfile and Dockerfile Path `dashboard/Dockerfile` / `etl/Dockerfile`. Set 5 vars on each code service referencing the DB: `POSTGRES_HOST=${{Postgres.PGHOST}}`, `PORT`/`DB`/`USER`/`PASSWORD` likewise. `dashboard` gets a public domain + healthcheck `/health`; `PORT` is injected by Railway (the dashboard Dockerfile honours `$PORT`). The identical stack also runs locally via `docker compose up` and is portable to Synology — all env-specific config stays in env vars. See README "Deploying to Railway".
 
 > When a change adds a table, migration, ETL source, env var, or service, check whether the relevant section above (§2, §3, §5, §7) is now stale and flag the update — do not let this file drift from the code.

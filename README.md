@@ -175,3 +175,49 @@ To answer as we go:
 2. **Scheduler:** Railway cron vs. Synology DSM Task Scheduler vs. in-container cron — pick once host is final.
 3. **Metals warehouse stocks & multi-expiry futures** (for curve shape): acceptable to defer if no free source?
 4. **History depth:** how far back to backfill each series for backtesting?
+
+---
+
+## 9. Running & Deploying
+
+The same stack runs locally via Docker Compose and on Railway/Synology — all environment-specific values live in env vars.
+
+### Run locally (Docker Compose)
+
+```bash
+cp .env.example .env      # defaults work as-is for local
+docker compose up --build
+```
+
+- Dashboard → http://localhost:8000/ ("it's alive"), health → http://localhost:8000/health (`{"status":"ok"}`).
+- `etl` applies migrations (`alembic upgrade head`) on boot, then idles (no scheduler yet).
+- Re-running `docker compose up` is a safe no-op; Postgres persists in the `pgdata` volume.
+
+Apply migrations manually if needed:
+
+```bash
+docker compose run --rm etl alembic -c migrations/alembic.ini upgrade head
+```
+
+### Deploy to Railway
+
+Railway does **not** read `docker-compose.yml` or `.env` — you create services in its dashboard, all backed by this GitHub repo.
+
+1. **Add PostgreSQL** (New → Database → PostgreSQL).
+2. **Add the `dashboard` service** (New → GitHub Repo → this repo). In **Settings → Build**: set **Builder = Dockerfile**, **Dockerfile Path = `dashboard/Dockerfile`** (Root Directory `/`). **Settings → Networking:** generate a domain, **Healthcheck Path = `/health`**.
+3. **Add the `etl` service** — same repo again, **Dockerfile Path = `etl/Dockerfile`**, no domain.
+4. On **both** code services, set these variables (Railway reference syntax points at the managed DB, so nothing is hardcoded):
+
+   ```
+   POSTGRES_HOST     = ${{Postgres.PGHOST}}
+   POSTGRES_PORT     = ${{Postgres.PGPORT}}
+   POSTGRES_DB       = ${{Postgres.PGDATABASE}}
+   POSTGRES_USER     = ${{Postgres.PGUSER}}
+   POSTGRES_PASSWORD = ${{Postgres.PGPASSWORD}}
+   ```
+
+   Do **not** set `PORT` (Railway injects it; the dashboard Dockerfile honours `$PORT`) or `DASHBOARD_PORT` (local Compose only). FRED/EIA/USDA/CFTC keys are added to the `etl` service in Phase 2, not now.
+
+5. **No start command and no cron** this phase — each Dockerfile's `CMD` is the start command, and the scheduler is deliberately deferred (§2). `etl` runs migrations on deploy, then idles.
+
+Redeploys are safe: `alembic upgrade head` is a no-op at head, and the Postgres volume persists. Builds deploy from `main`.
