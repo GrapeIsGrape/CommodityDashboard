@@ -1,0 +1,40 @@
+# Identical stack for local / Railway / Synology — everything env-specific
+# lives in .env. Copy .env.example to .env before `docker compose up`.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  etl:
+    build:
+      context: .
+      dockerfile: etl/Dockerfile
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    env_file: .env
+    ports:
+      - "${DASHBOARD_PORT}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

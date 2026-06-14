@@ -1,0 +1,65 @@
+# Canonical v1 symbol universe for CommodityDashboard.
+# Single source of truth — nothing here may be hardcoded in code.
+#
+# Each commodity entry:
+#   future   - the futures root symbol we track for price/positioning
+#   name     - human-readable label
+#   iv_proxy - optionable ETF whose option chain supplies IV (Phase 3).
+#              null where no liquid optionable proxy exists; IV stays
+#              unavailable for that underlying until a source is found.
+
+commodities:
+  precious_metals:
+    - { future: GC, name: Gold,      iv_proxy: GLD }
+    - { future: SI, name: Silver,    iv_proxy: SLV }
+    - { future: PL, name: Platinum,  iv_proxy: PPLT }
+    - { future: PA, name: Palladium, iv_proxy: PALL }
+
+  base_metals:
+    - { future: HG,  name: Copper,   iv_proxy: CPER }
+    - { future: ALI, name: Aluminum, iv_proxy: null }
+    - { future: ZNC, name: Zinc,     iv_proxy: null }
+    - { future: NICKEL, name: Nickel, iv_proxy: null }
+
+  energy:
+    - { future: CL, name: WTI Crude,    iv_proxy: USO }
+    - { future: BZ, name: Brent Crude,  iv_proxy: BNO }
+    - { future: NG, name: Natural Gas,  iv_proxy: UNG }
+    - { future: RB, name: RBOB Gasoline, iv_proxy: UGA }
+    - { future: HO, name: Heating Oil,  iv_proxy: null }
+
+  grains_oilseeds:
+    - { future: ZC, name: Corn,            iv_proxy: CORN }
+    - { future: ZS, name: Soybeans,        iv_proxy: SOYB }
+    - { future: ZM, name: Soybean Meal,    iv_proxy: null }
+    - { future: ZL, name: Soybean Oil,     iv_proxy: null }
+    - { future: ZW, name: Wheat (Chicago), iv_proxy: WEAT }
+    - { future: KE, name: Wheat (KC HRW),  iv_proxy: null }
+    - { future: MW, name: Wheat (Spring),  iv_proxy: null }
+    - { future: ZR, name: Rough Rice,      iv_proxy: null }
+    - { future: ZO, name: Oats,            iv_proxy: null }
+
+  softs:
+    - { future: KC,  name: Coffee, iv_proxy: null }
+    - { future: SB,  name: Sugar,  iv_proxy: CANE }
+    - { future: CC,  name: Cocoa,  iv_proxy: null }
+    - { future: CT,  name: Cotton, iv_proxy: null }
+    - { future: OJ,  name: Orange Juice, iv_proxy: null }
+    - { future: LBR, name: Lumber, iv_proxy: null }
+
+  livestock:
+    - { future: LE, name: Live Cattle,   iv_proxy: null }
+    - { future: GF, name: Feeder Cattle, iv_proxy: null }
+    - { future: HE, name: Lean Hogs,     iv_proxy: null }
+
+# Macro-context tickers — context only, NOT commodities (README §4 sub-panel).
+macro_context:
+  - { symbol: TLT, name: 20+ Year Treasury Bond ETF }
+  - { symbol: VTI, name: Total US Stock Market ETF }
+  - { symbol: QQQ, name: Nasdaq-100 ETF }
+
+# Published volatility indices (Panel D). yfinance tickers.
+volatility_indices:
+  - { symbol: "^VIX", name: CBOE Volatility Index }
+  - { symbol: "^GVZ", name: CBOE Gold Volatility Index }
+  - { symbol: "^OVX", name: CBOE Crude Oil Volatility Index }
