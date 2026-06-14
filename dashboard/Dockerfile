@@ -12,4 +12,5 @@ COPY dashboard/ ./dashboard/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "dashboard.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Shell form so Railway's injected $PORT is honoured; defaults to 8000 locally.
+CMD uvicorn dashboard.main:app --host 0.0.0.0 --port ${PORT:-8000}
