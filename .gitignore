@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Phase 0 throwaway spike artifacts
+.spike_venv/
+.DS_Store
