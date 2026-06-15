@@ -1,0 +1,46 @@
+# Canonical FRED macro series for Panel A (Macro / Cross-Asset).
+# Single source of truth — series ids are never hardcoded in code.
+#
+# defaults:
+#   observation_start    - earliest date seeded on a series' first run (backfill).
+#   revision_lookback_days - on later runs, refetch this many days before the
+#                          latest stored date so FRED revisions overwrite in place.
+#
+# Each series entry:
+#   id    - FRED series id (https://fred.stlouisfed.org/series/<id>)
+#   label - human-readable name for the dashboard
+#   panel - dashboard panel grouping (Panel A only for now)
+#
+# Excluded / flagged:
+#   ISM PMIs (manufacturing/services) are NOT freely redistributable on FRED
+#     (licensed) — deferred to a separate source, not faked here.
+#   DXY: ICE's index is not on FRED; DTWEXBGS (trade-weighted broad dollar
+#     index) is used as the proxy and labelled as such.
+
+defaults:
+  observation_start: "2005-01-01"
+  revision_lookback_days: 14
+
+series:
+  # Rates & real yields
+  - { id: DGS10,    label: "10-Year Treasury Yield",            panel: A }
+  - { id: DFII10,   label: "10-Year TIPS (Real) Yield",         panel: A }
+  - { id: T10YIE,   label: "10-Year Breakeven Inflation Rate",  panel: A }
+
+  # Inflation
+  - { id: CPIAUCSL, label: "CPI (All Urban Consumers)",         panel: A }
+  - { id: PCEPI,    label: "PCE Price Index",                   panel: A }
+  - { id: PPIACO,   label: "PPI (All Commodities)",             panel: A }
+
+  # Employment
+  - { id: PAYEMS,   label: "Nonfarm Payrolls",                  panel: A }
+  - { id: UNRATE,   label: "Unemployment Rate",                 panel: A }
+
+  # Growth
+  - { id: GDPC1,    label: "Real GDP",                          panel: A }
+
+  # Volatility
+  - { id: VIXCLS,   label: "CBOE Volatility Index (VIX)",       panel: A }
+
+  # Dollar (DXY proxy — see note above)
+  - { id: DTWEXBGS, label: "Trade-Weighted USD Index (DXY proxy)", panel: A }

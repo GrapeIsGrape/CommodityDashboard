@@ -85,11 +85,11 @@ Precious metals (GC/GLD, SI/SLV, PL, PA), base metals (HG, Aluminum, Zinc, Nicke
 
 ## 6. Build status & phased plan
 
-**Stop after each phase for review.** Current position: **Phase 1 done (#1 scaffold + #2 schema) — repo skeleton runs on Railway and all data-table schemas exist; ready for Phase 2 (#3+).**
+**Stop after each phase for review.** Current position: **Phase 2 in progress — first ETL source (FRED, #3) done; EIA/USDA/CFTC follow the same pattern.**
 
 - **Phase 0 — Volatility data spike — ✅ DONE (2026-06-14).** De-risked: **yfinance** delivers option-chain IV + vol indices + price history, **no IBKR or paid feed needed for v1**. Consequences: IV via optionable ETF proxies (not futures symbols); IV rank/percentile must be accrued from our own daily snapshots (Yahoo gives no IV history); keep the source behind a swappable interface. Throwaway proof: [spike_iv.py](spike_iv.py).
 - **Phase 1 — Foundation & schema — ✅ DONE.** Scaffold (#1, 2026-06-14): Docker Compose (`postgres`/`etl`/`dashboard`), `.env.example`, symbol config, Alembic + empty `0001_baseline`, FastAPI boot page + `/health`; deployed on Railway. Schema (#2, 2026-06-15): migration `0002_data_tables` creates `prices`, `macro_metrics`, `inventories`, `cot`, `iv_metrics`, `curve_shape` — each time-stamped with a named natural-key UNIQUE constraint (idempotent upsert) and a `(key, date DESC)` index. Placeholder `sentiment_*` realised as two tables: `sentiment_articles` (raw inputs) + `sentiment_scores` (model score + reasoning).
-- **Phase 2 — Free-data ETL:** FRED, EIA, USDA, CFTC. Idempotent, scheduled, backfilled.
+- **Phase 2 — Free-data ETL:** FRED, EIA, USDA, CFTC. Idempotent, scheduled, backfilled. **FRED done (#3, 2026-06-15):** `etl/sources/fred.py` + `config/fred_series.yaml` + `load_fred_series()` — config-driven series list (Panel A → `macro_metrics`), idempotent upsert on `(series_id, date)`, incremental + revision-lookback start (backfill from `observation_start` on first run), per-series error isolation, env-only `FRED_API_KEY`, `"."` sentinel → NULL. Manual run (`python -m etl.sources.fred`); scheduler still deferred. ISM PMIs (licensed) and ICE DXY excluded — DXY proxied by `DTWEXBGS`.
 - **Phase 3 — Volatility & positioning ETL:** wire IV → `iv_metrics`, add curve shape and OVX/GVZ/VIX.
 - **Phase 4 — Dashboard (FastAPI):** four panels + macro sub-panel + empty sentiment panel.
 - **Phase 5 — Polish & deploy:** deploy Compose stack, release calendar, health checks/logging, redeploy docs.
@@ -104,11 +104,12 @@ Precious metals (GC/GLD, SI/SLV, PL, PA), base metals (HG, Aluminum, Zinc, Nicke
   - `docker-compose.yml` — `postgres` / `etl` / `dashboard`, Postgres on a named `pgdata` volume
   - `.env.example` — every env var (DB host/port/name/user/password, `DASHBOARD_PORT`, FRED/EIA/USDA/CFTC key placeholders); `.env` git-ignored
   - `config/symbols.yaml` — v1 commodity universe + commodity→optionable-ETF-proxy mapping + macro-context & vol-index tickers (the canonical symbol list)
-  - `common/config.py` — shared: `get_database_url()` (env→SQLAlchemy URL) + `load_symbols()`
+  - `config/fred_series.yaml` — canonical FRED macro series list (id → label/panel) + backfill defaults (`observation_start`, `revision_lookback_days`)
+  - `common/config.py` — shared: `get_database_url()` (env→SQLAlchemy URL) + `load_symbols()` + `load_fred_series()`
   - `dashboard/` — FastAPI app (`main.py`: `/` boot page, `/health` Postgres check), `Dockerfile`, `requirements.txt`
-  - `etl/` — `run.py` (entrypoint: applies migrations then idles — no scheduler yet), `sources/` (one module per source, Phase 2+), `Dockerfile`, `requirements.txt`
+  - `etl/` — `run.py` (entrypoint: applies migrations then idles — no scheduler yet), `sources/` (one module per source: `fred.py` Phase 2 → Panel A; EIA/USDA/CFTC to follow), `Dockerfile`, `requirements.txt` (adds `requests`)
   - `migrations/` — Alembic: `alembic.ini`, `env.py`, `script.py.mako`, `versions/0001_baseline.py` (empty baseline), `versions/0002_data_tables.py` (`prices`, `macro_metrics`, `inventories`, `cot`, `iv_metrics`, `curve_shape`, `sentiment_articles`, `sentiment_scores`)
-  - `tests/` — pytest (`test_config.py`, `test_migrations.py` — live-Postgres-or-skip)
+  - `tests/` — pytest (`test_config.py`, `test_migrations.py`, `test_fred.py` — live-Postgres-or-skip; external APIs mocked)
 - **Deployment (Railway):** GitHub repo backs three services — `Postgres` (managed), and `dashboard` + `etl` both built from the **same repo** with Builder=Dockerfile and Dockerfile Path `dashboard/Dockerfile` / `etl/Dockerfile`. Set 5 vars on each code service referencing the DB: `POSTGRES_HOST=${{Postgres.PGHOST}}`, `PORT`/`DB`/`USER`/`PASSWORD` likewise. `dashboard` gets a public domain + healthcheck `/health`; `PORT` is injected by Railway (the dashboard Dockerfile honours `$PORT`). The identical stack also runs locally via `docker compose up` and is portable to Synology — all env-specific config stays in env vars. See README "Deploying to Railway".
 
 > When a change adds a table, migration, ETL source, env var, or service, check whether the relevant section above (§2, §3, §5, §7) is now stale and flag the update — do not let this file drift from the code.

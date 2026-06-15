@@ -10,7 +10,9 @@ from pathlib import Path
 import yaml
 from sqlalchemy.engine import URL
 
-_DEFAULT_SYMBOLS_PATH = Path(__file__).resolve().parent.parent / "config" / "symbols.yaml"
+_CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
+_DEFAULT_SYMBOLS_PATH = _CONFIG_DIR / "symbols.yaml"
+_DEFAULT_FRED_SERIES_PATH = _CONFIG_DIR / "fred_series.yaml"
 
 
 def get_database_url() -> URL:
@@ -35,5 +37,15 @@ def load_symbols(path: str | os.PathLike | None = None) -> dict:
     Override the location with the SYMBOLS_CONFIG env var or the ``path`` arg.
     """
     resolved = Path(path or os.environ.get("SYMBOLS_CONFIG") or _DEFAULT_SYMBOLS_PATH)
+    with open(resolved, "r", encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+def load_fred_series(path: str | os.PathLike | None = None) -> dict:
+    """Load the FRED macro series config from config/fred_series.yaml.
+
+    Override the location with the FRED_SERIES_CONFIG env var or the ``path`` arg.
+    """
+    resolved = Path(path or os.environ.get("FRED_SERIES_CONFIG") or _DEFAULT_FRED_SERIES_PATH)
     with open(resolved, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
