@@ -1,4 +1,11 @@
 {
+  "env": {
+    "POSTGRES_USER": "commodity",
+    "POSTGRES_PASSWORD": "change_me",
+    "POSTGRES_HOST": "localhost",
+    "POSTGRES_PORT": "5432",
+    "POSTGRES_DB": "commodity"
+  },
   "permissions": {
     "allow": [
       "Bash(ls:*)",
@@ -16,6 +23,7 @@
       "Bash(git show:*)",
       "Bash(git branch:*)",
       "Bash(git rev-parse:*)",
+      "Bash(git -C /Users/albertwong/Documents/GitHub/CommodityDashboard:*)",
       "Bash(gh issue view:*)",
       "Bash(gh issue list:*)",
       "Bash(gh pr view:*)",
@@ -49,6 +57,7 @@
       "Bash(python -c:*)",
       "Bash(psql:*)",
       "Bash(PGPASSWORD=change_me psql:*)",
+      "Bash(POSTGRES_USER=commodity POSTGRES_PASSWORD=change_me POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_DB=commodity python3:*)",
       "Bash(export PATH=:*)",
       "Bash(sleep:*)",
       "Bash(brew:*)",
