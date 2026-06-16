@@ -1,0 +1,77 @@
+# Canonical CFTC Commitments-of-Traders market map for Panel C (Positioning).
+# Single source of truth — contract codes are never hardcoded in code.
+#
+# Pulled from the free CFTC Socrata Open Data API (no key required):
+#   https://publicreporting.cftc.gov/resource/<dataset>.json
+# The `dataset` below is the **Legacy Futures-Only** report (6dca-aqww), whose
+# commercial / non-commercial split maps directly onto the `cot` columns
+# (noncomm_long/short, comm_long/short, open_interest). Disaggregated / TFF
+# reports use different categories and are out of scope.
+#
+# defaults:
+#   dataset                - Socrata dataset id (Legacy Futures Only).
+#   observation_start      - earliest report date seeded on a market's first run
+#                            (backfill).
+#   revision_lookback_days - on later runs, refetch from
+#                            (latest stored report_date - this many days) so CFTC
+#                            restatements overwrite in place while staying
+#                            incremental.
+#
+# Each market entry:
+#   symbol - our universe symbol (config/symbols.yaml `future`), the natural key
+#            in `cot` alongside report_date.
+#   code   - CFTC `cftc_contract_market_code` (6 chars). Every code below was
+#            verified against the live API (market_and_exchange_names in the
+#            comment) — not guessed.
+#   name   - human-readable label for the dashboard.
+#
+# Flagged / omitted (NOT faked):
+#   Base metals ALI (Aluminum), ZNC (Zinc), NICKEL — primarily LME contracts
+#     with no CFTC Legacy futures-only report; omitted until a positioning
+#     source exists.
+
+defaults:
+  dataset: "6dca-aqww"
+  observation_start: "2010-01-01"
+  revision_lookback_days: 30
+
+markets:
+  # Precious metals
+  - { symbol: GC, code: "088691", name: "Gold (COMEX)" }
+  - { symbol: SI, code: "084691", name: "Silver (COMEX)" }
+  - { symbol: PL, code: "076651", name: "Platinum (NYMEX)" }
+  - { symbol: PA, code: "075651", name: "Palladium (NYMEX)" }
+
+  # Base metals
+  - { symbol: HG, code: "085692", name: "Copper #1 (COMEX)" }
+
+  # Energy
+  - { symbol: CL, code: "067651", name: "WTI Crude Oil - Physical (NYMEX)" }
+  - { symbol: BZ, code: "06765T", name: "Brent Last Day (NYMEX)" }
+  - { symbol: NG, code: "023651", name: "Natural Gas - Henry Hub (NYMEX)" }
+  - { symbol: RB, code: "111659", name: "Gasoline RBOB (NYMEX)" }
+  - { symbol: HO, code: "022651", name: "NY Harbor ULSD / Heating Oil (NYMEX)" }
+
+  # Grains & oilseeds
+  - { symbol: ZC, code: "002602", name: "Corn (CBOT)" }
+  - { symbol: ZS, code: "005602", name: "Soybeans (CBOT)" }
+  - { symbol: ZM, code: "026603", name: "Soybean Meal (CBOT)" }
+  - { symbol: ZL, code: "007601", name: "Soybean Oil (CBOT)" }
+  - { symbol: ZW, code: "001602", name: "Wheat SRW (CBOT)" }
+  - { symbol: KE, code: "001612", name: "Wheat HRW (CBOT/KC)" }
+  - { symbol: MW, code: "001626", name: "Wheat HRSpring (MGEX)" }
+  - { symbol: ZR, code: "039601", name: "Rough Rice (CBOT)" }
+  - { symbol: ZO, code: "004603", name: "Oats (CBOT)" }
+
+  # Softs
+  - { symbol: KC, code: "083731", name: "Coffee C (ICE)" }
+  - { symbol: SB, code: "080732", name: "Sugar No. 11 (ICE)" }
+  - { symbol: CC, code: "073732", name: "Cocoa (ICE)" }
+  - { symbol: CT, code: "033661", name: "Cotton No. 2 (ICE)" }
+  - { symbol: OJ, code: "040701", name: "FCOJ - Orange Juice (ICE)" }
+  - { symbol: LBR, code: "058644", name: "Lumber (CME)" }
+
+  # Livestock
+  - { symbol: LE, code: "057642", name: "Live Cattle (CME)" }
+  - { symbol: GF, code: "061641", name: "Feeder Cattle (CME)" }
+  - { symbol: HE, code: "054642", name: "Lean Hogs (CME)" }

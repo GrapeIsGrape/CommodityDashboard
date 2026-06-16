@@ -15,6 +15,7 @@ _DEFAULT_SYMBOLS_PATH = _CONFIG_DIR / "symbols.yaml"
 _DEFAULT_FRED_SERIES_PATH = _CONFIG_DIR / "fred_series.yaml"
 _DEFAULT_EIA_SERIES_PATH = _CONFIG_DIR / "eia_series.yaml"
 _DEFAULT_USDA_SERIES_PATH = _CONFIG_DIR / "usda_series.yaml"
+_DEFAULT_CFTC_MARKETS_PATH = _CONFIG_DIR / "cftc_markets.yaml"
 
 
 def get_database_url() -> URL:
@@ -69,5 +70,15 @@ def load_usda_series(path: str | os.PathLike | None = None) -> dict:
     Override the location with the USDA_SERIES_CONFIG env var or the ``path`` arg.
     """
     resolved = Path(path or os.environ.get("USDA_SERIES_CONFIG") or _DEFAULT_USDA_SERIES_PATH)
+    with open(resolved, "r", encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+def load_cftc_markets(path: str | os.PathLike | None = None) -> dict:
+    """Load the CFTC COT market map from config/cftc_markets.yaml.
+
+    Override the location with the CFTC_MARKETS_CONFIG env var or the ``path`` arg.
+    """
+    resolved = Path(path or os.environ.get("CFTC_MARKETS_CONFIG") or _DEFAULT_CFTC_MARKETS_PATH)
     with open(resolved, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
