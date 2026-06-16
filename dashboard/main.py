@@ -9,6 +9,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import ProgrammingError
 
 from common.config import get_database_url
 
@@ -36,7 +37,24 @@ def health() -> JSONResponse:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        return JSONResponse({"status": "ok", "database": "reachable"})
+            schema_version = _read_schema_version(conn)
+        return JSONResponse(
+            {"status": "ok", "database": "reachable", "schema_version": schema_version}
+        )
     except Exception:
         logger.exception("Database health check failed")
         return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable"})
+
+
+def _read_schema_version(conn) -> str | None:
+    """Return the current Alembic head revision, or None on a pre-migration DB.
+
+    Read-only and parameter-free. A fresh database has no ``alembic_version``
+    table (or it is empty); that is reported as ``None`` rather than failing the
+    health check.
+    """
+    try:
+        row = conn.execute(text("SELECT version_num FROM alembic_version")).first()
+    except ProgrammingError:
+        return None
+    return row[0] if row is not None else None

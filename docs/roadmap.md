@@ -15,7 +15,7 @@ _Last reconciled: 2026-06-16 (#11 curve-shape shipped — QA✓ UAT✓; Phase 3 
 **Current position: Phase 3 ETL SOURCES COMPLETE** — Phase 2 complete (FRED #3, EIA #4, USDA #6, CFTC #7; scheduler deferred). Phase 3: **IV → `iv_metrics` (#9) DONE** (swappable `get_iv()`); **vol indices GVZ/OVX → `iv_metrics` (#10) DONE** (swappable `IndexHistoryProvider`, ~3y backfill, trailing-365d rank); **curve shape → `curve_shape` (#11) DONE** (energy-only CL/BZ/NG/RB/HO, front-vs-deferred annualized slope + structure flag, swappable `CurveProvider`).
 **Next up: Phase 4 dashboard (FastAPI panels), OR the deferred scheduler wiring. PM's call at the cycle boundary — both are valid; scheduler is the smaller step and unblocks live data, Phase 4 is the bigger user-facing payoff.**
 
-Open backlog: **#8** (add `schema_version` to dashboard `/health`) — tooling/observability, available but lower priority than the Phase 3 data work.
+Open backlog: ~~**#8** (add `schema_version` to dashboard `/health`)~~ — **DONE**: `/health` returns the current Alembic revision (`null` on a pre-migration DB), read-only, for migration observability. Remaining backlog: **#12** (curve-shape deferred-gap anchoring refinement).
 
 The PM loop crosses phase boundaries by default. If you want a human glance at the end of Phase 3 (before the Phase 4 dashboard work), tell the PM to stop at the phase boundary.
 
