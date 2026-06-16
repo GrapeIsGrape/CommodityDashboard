@@ -56,6 +56,24 @@ def test_missing_value_sentinel_becomes_null():
     assert all(r["source"] == "FRED" for r in rows)
 
 
+# --- Secret redaction on request failure ---------------------------------
+
+def test_fetch_failure_redacts_api_key(monkeypatch):
+    secret = "supersecretkey"
+
+    def boom(url, params, timeout):
+        raise fred.requests.ConnectionError(
+            f"Max retries exceeded with url: "
+            f"/fred/series/observations?series_id=DGS10&api_key={secret}"
+        )
+
+    monkeypatch.setattr(fred.requests, "get", boom)
+    with pytest.raises(RuntimeError) as excinfo:
+        fred._fetch_observations("DGS10", secret, "2024-01-01")
+    assert secret not in str(excinfo.value)
+    assert "***" in str(excinfo.value)
+
+
 # --- API key guard --------------------------------------------------------
 
 def test_run_requires_api_key(monkeypatch):

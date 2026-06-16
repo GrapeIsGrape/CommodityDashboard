@@ -60,6 +60,13 @@ def _require_api_key() -> str:
     return key
 
 
+def _redact(message: str, api_key: str) -> str:
+    """Strip the API key out of an error string. FRED takes the key as a query
+    param, so request exceptions (HTTP status, connection, timeout) embed the
+    full URL — keep it out of the logs."""
+    return message.replace(api_key, "***") if api_key else message
+
+
 def _latest_stored_date(engine: Engine, series_id: str) -> Optional[dt.date]:
     with engine.connect() as conn:
         result = conn.execute(
@@ -91,8 +98,15 @@ def _fetch_observations(series_id: str, api_key: str, observation_start: str) ->
         "file_type": "json",
         "observation_start": observation_start,
     }
-    response = requests.get(_FRED_OBSERVATIONS_URL, params=params, timeout=_REQUEST_TIMEOUT)
-    response.raise_for_status()
+    try:
+        response = requests.get(
+            _FRED_OBSERVATIONS_URL, params=params, timeout=_REQUEST_TIMEOUT
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            f"FRED request for {series_id} failed: {_redact(str(exc), api_key)}"
+        ) from None
     return response.json().get("observations", [])
 
 
