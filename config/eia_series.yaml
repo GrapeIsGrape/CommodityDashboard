@@ -1,0 +1,48 @@
+# Canonical EIA energy-inventory series for Panel B (Fundamentals / Inventory).
+# Single source of truth — series ids are never hardcoded in code.
+#
+# Pulled via the EIA Open Data v2 backwards-compatible seriesid endpoint
+#   https://api.eia.gov/v2/seriesid/<id>
+# which accepts these legacy v1 series ids and returns the v2 paginated shape.
+#
+# defaults:
+#   observation_start    - earliest year seeded on a series' first run (backfill);
+#                          only the year is sent to the API so the lower bound is
+#                          safe for weekly, monthly, and annual period formats.
+#   revision_lookback_days - on later runs, refetch from the year of
+#                          (latest stored date - this many days) so EIA revisions
+#                          overwrite in place while staying incremental.
+#
+# Each series entry:
+#   id    - EIA legacy series id (https://www.eia.gov/opendata/browser/)
+#   label - human-readable name for the dashboard
+#   unit  - published unit; stored alongside the value (falls back to the API's
+#           reported unit if omitted)
+#   panel - dashboard panel grouping (Panel B only for now)
+#
+# Frequencies are mixed (weekly petroleum/nat-gas, weekly production proxies);
+# the per-date row handles all — no resampling here.
+#
+# Flagged / excluded:
+#   Metals warehouse stocks (LME/COMEX) are NOT on the EIA API — they need a
+#     paid feed or scraping and are deferred, not faked here.
+
+defaults:
+  observation_start: "2005-01-01"
+  revision_lookback_days: 14
+
+series:
+  # Crude oil stocks
+  - { id: PET.WCESTUS1.W,                label: "US Crude Oil Stocks excl SPR",        unit: "Thousand Barrels", panel: B }
+  - { id: PET.W_EPC0_SAX_YCUOK_MBBL.W,   label: "Cushing OK Crude Oil Stocks excl SPR", unit: "Thousand Barrels", panel: B }
+
+  # Refined product stocks
+  - { id: PET.WGTSTUS1.W,                label: "US Total Gasoline Stocks",            unit: "Thousand Barrels", panel: B }
+  - { id: PET.WDISTUS1.W,                label: "US Distillate Total Stocks",          unit: "Thousand Barrels", panel: B }
+
+  # Natural gas working storage
+  - { id: NG.NW2_EPG0_SWO_R48_BCF.W,     label: "Working Gas in Underground Storage (Lower 48)", unit: "Billion Cubic Feet", panel: B }
+
+  # Production / demand proxies
+  - { id: PET.WCRFPUS2.W,                label: "US Crude Oil Field Production",       unit: "Thousand Barrels per Day", panel: B }
+  - { id: PET.WRPUPUS2.W,                label: "US Petroleum Products Supplied (demand proxy)", unit: "Thousand Barrels per Day", panel: B }
