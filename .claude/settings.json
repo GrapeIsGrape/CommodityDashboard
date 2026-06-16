@@ -1,5 +1,47 @@
 {
   "permissions": {
-    "allow": []
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(echo:*)",
+      "Bash(sed:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh search issues:*)",
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(python3 -c:*)",
+      "Bash(python3 -m etl.sources.fred:*)",
+      "Bash(python3 -m etl.sources.eia:*)",
+      "Bash(python3 -m etl.sources.usda:*)",
+      "Bash(python3 -m etl.sources.cftc:*)",
+      "Bash(python -m etl.sources.fred:*)",
+      "Bash(python -m etl.sources.eia:*)",
+      "Bash(python -m etl.sources.usda:*)",
+      "Bash(python -m etl.sources.cftc:*)",
+      "Bash(alembic upgrade:*)",
+      "Bash(alembic current:*)",
+      "Bash(alembic history:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh issue create:*)",
+      "Bash(gh issue close:*)",
+      "Bash(alembic revision:*)"
+    ]
   }
 }
