@@ -41,7 +41,21 @@
       "Bash(git push:*)",
       "Bash(gh issue create:*)",
       "Bash(gh issue close:*)",
-      "Bash(alembic revision:*)"
+      "Bash(alembic revision:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker:*)",
+      "Bash(nc:*)",
+      "Bash(python -c:*)",
+      "Bash(psql:*)",
+      "Bash(PGPASSWORD=change_me psql:*)",
+      "Bash(export PATH=:*)",
+      "Bash(sleep:*)",
+      "Bash(brew:*)",
+      "Bash(/opt/homebrew/bin/brew:*)",
+      "Bash(pg_isready:*)",
+      "Bash(/opt/homebrew/opt/postgresql@16/bin/pg_isready:*)",
+      "Edit(//Users/albertwong/Documents/GitHub/CommodityDashboard/**)",
+      "Write(//Users/albertwong/Documents/GitHub/CommodityDashboard/**)"
     ]
   }
 }
