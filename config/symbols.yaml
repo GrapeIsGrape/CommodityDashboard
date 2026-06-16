@@ -59,7 +59,22 @@ macro_context:
   - { symbol: QQQ, name: Nasdaq-100 ETF }
 
 # Published volatility indices (Panel D). yfinance tickers.
+#
+# The vol-indices ETL (etl/sources/vol_indices.py) ingests `ingest: true`
+# entries into iv_metrics — `ticker` is the yfinance symbol (caret), `symbol`
+# is the caret-stripped name stored in iv_metrics.symbol.
+#
+# ^VIX is deliberately NOT ingested here (`ingest: false`): VIX is sourced from
+# FRED `VIXCLS` → macro_metrics (#3). Re-pulling it via yfinance would duplicate
+# it with worse lineage; the dashboard reads VIX from macro_metrics. GVZ/OVX have
+# no FRED equivalent, so they belong here next to per-underlying IV.
 volatility_indices:
-  - { symbol: "^VIX", name: CBOE Volatility Index }
-  - { symbol: "^GVZ", name: CBOE Gold Volatility Index }
-  - { symbol: "^OVX", name: CBOE Crude Oil Volatility Index }
+  defaults:
+    # First run backfills this many calendar days of daily closes (~3 years),
+    # consistent with the FRED/EIA/CFTC backfill-default convention — never a
+    # magic number in code. Later runs are incremental from max(snapshot_date).
+    backfill_days: 1095
+  indices:
+    - { ticker: "^VIX", symbol: VIX, name: CBOE Volatility Index, ingest: false }
+    - { ticker: "^GVZ", symbol: GVZ, name: CBOE Gold Volatility Index, ingest: true }
+    - { ticker: "^OVX", symbol: OVX, name: CBOE Crude Oil Volatility Index, ingest: true }
