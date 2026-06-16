@@ -1,0 +1,93 @@
+# Canonical USDA NASS QuickStats series for Panel B (Fundamentals / Inventory).
+# Single source of truth — query parameters are never hardcoded in code.
+#
+# Pulled via the free USDA NASS QuickStats API
+#   https://quickstats.nass.usda.gov/api/api_GET/?key=<KEY>&...&format=JSON
+# which returns {"data": [ {record}, ... ]}. The API caps a single response at
+# 50,000 records and errors past that, so every query is pinned to
+# agg_level_desc: NATIONAL and a single short_desc — national grain series are
+# tiny (decades x annual/quarterly), and the year-incremental start keeps later
+# runs small.
+#
+# defaults:
+#   observation_start      - earliest year seeded on a series' first run
+#                            (backfill); only the year is sent to the API
+#                            (year__GE) so the lower bound is safe across the
+#                            annual/quarterly reference periods.
+#   revision_lookback_days - on later runs, refetch from the year of
+#                            (latest stored date - this many days) so NASS
+#                            revisions overwrite in place while staying
+#                            incremental.
+#
+# Each series entry:
+#   id    - synthetic series id we assign (the natural key in `inventories`,
+#           alongside source='USDA' and date); stable, never reused.
+#   label - human-readable name for the dashboard
+#   unit  - published unit; stored alongside the value (falls back to the API's
+#           reported unit_desc if omitted)
+#   panel - dashboard panel grouping (Panel B only for now)
+#   query - QuickStats filter params. `short_desc` pins commodity + class +
+#           statistic + unit in one selector; `agg_level_desc: NATIONAL` keeps
+#           it one value per period. The api key and year__GE/format are added
+#           by the loader at request time — never put the key here.
+#
+# Reference periods: PRODUCTION series are annual (reference_period_desc=YEAR ->
+# Jan 1). STOCKS series are quarterly (FIRST OF SEP/DEC/MAR/JUN -> first of that
+# month). Both map to a per-row date in the code.
+#
+# Flagged / deferred (NOT a clean API — not faked here):
+#   WASDE supply/demand balance sheet — monthly report files (Excel/PDF) from
+#     the World Agricultural Outlook Board, not a QuickStats query. Deferred.
+#   Crop-progress weekly % — different metric shape; the code already handles
+#     the `week_ending` date so it can be added later.
+
+defaults:
+  observation_start: "2005-01-01"
+  revision_lookback_days: 30
+
+series:
+  # Production (annual, reference_period_desc = YEAR)
+  - id: CORN_GRAIN_PRODUCTION_US
+    label: "US Corn Grain Production"
+    unit: "BU"
+    panel: B
+    query:
+      short_desc: "CORN, GRAIN - PRODUCTION, MEASURED IN BU"
+      agg_level_desc: NATIONAL
+  - id: SOYBEANS_PRODUCTION_US
+    label: "US Soybean Production"
+    unit: "BU"
+    panel: B
+    query:
+      short_desc: "SOYBEANS - PRODUCTION, MEASURED IN BU"
+      agg_level_desc: NATIONAL
+  - id: WHEAT_PRODUCTION_US
+    label: "US Wheat Production"
+    unit: "BU"
+    panel: B
+    query:
+      short_desc: "WHEAT - PRODUCTION, MEASURED IN BU"
+      agg_level_desc: NATIONAL
+
+  # Grain stocks (quarterly, reference_period_desc = FIRST OF SEP/DEC/MAR/JUN)
+  - id: CORN_GRAIN_STOCKS_US
+    label: "US Corn Grain Stocks (total)"
+    unit: "BU"
+    panel: B
+    query:
+      short_desc: "CORN, GRAIN - STOCKS, MEASURED IN BU"
+      agg_level_desc: NATIONAL
+  - id: SOYBEANS_STOCKS_US
+    label: "US Soybean Stocks (total)"
+    unit: "BU"
+    panel: B
+    query:
+      short_desc: "SOYBEANS - STOCKS, MEASURED IN BU"
+      agg_level_desc: NATIONAL
+  - id: WHEAT_STOCKS_US
+    label: "US Wheat Stocks (total)"
+    unit: "BU"
+    panel: B
+    query:
+      short_desc: "WHEAT - STOCKS, MEASURED IN BU"
+      agg_level_desc: NATIONAL

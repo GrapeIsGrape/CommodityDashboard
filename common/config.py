@@ -14,6 +14,7 @@ _CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 _DEFAULT_SYMBOLS_PATH = _CONFIG_DIR / "symbols.yaml"
 _DEFAULT_FRED_SERIES_PATH = _CONFIG_DIR / "fred_series.yaml"
 _DEFAULT_EIA_SERIES_PATH = _CONFIG_DIR / "eia_series.yaml"
+_DEFAULT_USDA_SERIES_PATH = _CONFIG_DIR / "usda_series.yaml"
 
 
 def get_database_url() -> URL:
@@ -58,5 +59,15 @@ def load_eia_series(path: str | os.PathLike | None = None) -> dict:
     Override the location with the EIA_SERIES_CONFIG env var or the ``path`` arg.
     """
     resolved = Path(path or os.environ.get("EIA_SERIES_CONFIG") or _DEFAULT_EIA_SERIES_PATH)
+    with open(resolved, "r", encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+def load_usda_series(path: str | os.PathLike | None = None) -> dict:
+    """Load the USDA NASS QuickStats series config from config/usda_series.yaml.
+
+    Override the location with the USDA_SERIES_CONFIG env var or the ``path`` arg.
+    """
+    resolved = Path(path or os.environ.get("USDA_SERIES_CONFIG") or _DEFAULT_USDA_SERIES_PATH)
     with open(resolved, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
