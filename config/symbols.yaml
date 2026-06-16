@@ -95,15 +95,32 @@ volatility_indices:
 #                   CLN26.NYM (month codes F G H J K M N Q U V X Z = Jan..Dec).
 #   deferred_root - root for the month-coded deferred ticker (often == front_ticker
 #                   minus "=F", but kept explicit because symbology is fragile).
-#   months_out    - deferred contract is this many calendar months past the
-#                   front month; the annualized slope divides by months_out/12.
-#                   The resolver (curve_shape.deferred_month_code) computes the
-#                   target as front_month + months_out, which is correct for the
-#                   energy contracts here because they list every consecutive
-#                   month. Underlyings whose listing months are NOT consecutive
-#                   (grains/softs) would need a next-listed-month resolver and
-#                   are intentionally out of scope (see below) — do not add them
-#                   here trusting this naive mapping.
+#   months_out    - deferred contract is this many delivery months past the
+#                   active front contract's delivery month; the annualized slope
+#                   divides by months_out/12. Both the deferred ticker and the
+#                   slope denominator are anchored to the front contract's
+#                   *realized* delivery month (front_lead_months + roll_day
+#                   below), NOT the calendar month — so near a roll they stay
+#                   correctly scaled (#12). Energy contracts list every
+#                   consecutive month, so front_delivery_month + months_out is a
+#                   valid listed contract. Underlyings whose listing months are
+#                   NOT consecutive (grains/softs) would need a next-listed-month
+#                   resolver and are intentionally out of scope (see below).
+#   front_lead_months - how many months ahead of the calendar month the active
+#                   front contract's *delivery* month normally sits. Energy
+#                   front-months deliver the next calendar month, so 1. (A
+#                   contract delivering month M lists/trades through ~M-1.)
+#   roll_day      - day-of-month (in the snapshot date) at/after which the front
+#                   contract has expired and the active front has rolled forward
+#                   one further delivery month. Approximates the exchange's
+#                   last-trade date (e.g. WTI ~3 business days before the 25th of
+#                   the month prior to delivery → ~the 20th-22nd). A fixed
+#                   calendar day, not the exact exchange business-day rule: it is
+#                   deterministic and host-timezone independent (it reads only the
+#                   passed snapshot date). The residual ~1-2 day imprecision only
+#                   shifts the anchor by one month right at the roll boundary and
+#                   still degrades to an honest NULL leg if the resolved ticker is
+#                   illiquid — it never fabricates a price.
 #
 # MUST-HAVE: the five energy underlyings with a real free front-month future
 # (CL, BZ, NG, RB, HO). Anything not listed here is intentionally out of scope:
@@ -117,8 +134,8 @@ curve:
     # contango/backwardation day to day on noise. Non-zero by design.
     flat_eps: 0.005
   underlyings:
-    - { symbol: CL, front_ticker: "CL=F", deferred_root: CL, suffix: ".NYM", months_out: 6 }
-    - { symbol: BZ, front_ticker: "BZ=F", deferred_root: BZ, suffix: ".NYM", months_out: 6 }
-    - { symbol: NG, front_ticker: "NG=F", deferred_root: NG, suffix: ".NYM", months_out: 6 }
-    - { symbol: RB, front_ticker: "RB=F", deferred_root: RB, suffix: ".NYM", months_out: 6 }
-    - { symbol: HO, front_ticker: "HO=F", deferred_root: HO, suffix: ".NYM", months_out: 6 }
+    - { symbol: CL, front_ticker: "CL=F", deferred_root: CL, suffix: ".NYM", months_out: 6, front_lead_months: 1, roll_day: 20 }
+    - { symbol: BZ, front_ticker: "BZ=F", deferred_root: BZ, suffix: ".NYM", months_out: 6, front_lead_months: 2, roll_day: 28 }
+    - { symbol: NG, front_ticker: "NG=F", deferred_root: NG, suffix: ".NYM", months_out: 6, front_lead_months: 1, roll_day: 26 }
+    - { symbol: RB, front_ticker: "RB=F", deferred_root: RB, suffix: ".NYM", months_out: 6, front_lead_months: 1, roll_day: 28 }
+    - { symbol: HO, front_ticker: "HO=F", deferred_root: HO, suffix: ".NYM", months_out: 6, front_lead_months: 1, roll_day: 28 }

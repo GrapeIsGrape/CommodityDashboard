@@ -124,14 +124,66 @@ def test_deferred_month_code_each_month_letter():
     assert codes == list(cs._MONTH_CODES)
 
 
-def test_build_deferred_ticker_shape():
-    today = dt.date(2026, 6, 16)  # June + 6 → December 2026 → CLZ26.NYM
+def test_build_deferred_ticker_shape_in_month():
+    # In-month (front_lead_months=0, roll_day past month-end): unchanged pre-#12
+    # behaviour — June + 6 → December 2026 → CLZ26.NYM.
+    today = dt.date(2026, 6, 16)
     assert cs.build_deferred_ticker("CL", ".NYM", today, 6) == "CLZ26.NYM"
 
 
-def test_build_deferred_ticker_year_rollover():
+def test_build_deferred_ticker_year_rollover_in_month():
     today = dt.date(2026, 10, 1)  # Oct + 6 → April 2027 → CLJ27.NYM
     assert cs.build_deferred_ticker("CL", ".NYM", today, 6) == "CLJ27.NYM"
+
+
+# --- #12: realized-front-month anchoring (near-roll boundary) -------------
+
+def test_realized_front_month_before_roll_is_lead_only():
+    # Early June WTI (lead 1, roll 20): active front delivers July, not June.
+    assert cs.realized_front_month(dt.date(2026, 6, 16), 1, 20) == (2026, 7)
+
+
+def test_realized_front_month_after_roll_advances_one_more():
+    # Late June WTI: July contract has expired → active front delivers August.
+    assert cs.realized_front_month(dt.date(2026, 6, 22), 1, 20) == (2026, 8)
+
+
+def test_realized_front_month_reduces_to_calendar_in_month():
+    # lead 0 + roll past month-end → realized front == calendar month (pre-#12).
+    for day in (1, 15, 28):
+        assert cs.realized_front_month(dt.date(2026, 6, day), 0, 99) == (2026, 6)
+
+
+def test_realized_front_month_year_wrap_via_lead_and_roll():
+    # Late December, lead 1 + roll: Dec + 1 + 1 = Feb of next year.
+    assert cs.realized_front_month(dt.date(2026, 12, 28), 1, 20) == (2027, 2)
+
+
+def test_build_deferred_ticker_late_june_wti_anchors_to_august():
+    # AC #1: late-June WTI deferred is N (=6) months past AUGUST, not past June.
+    # August + 6 → February 2027 → code G → CLG27.NYM (NOT the calendar-anchored
+    # CLZ26.NYM the pre-#12 code produced).
+    today = dt.date(2026, 6, 22)
+    assert cs.build_deferred_ticker("CL", ".NYM", today, 6, front_lead_months=1, roll_day=20) == "CLG27.NYM"
+
+
+def test_build_deferred_ticker_before_roll_anchors_to_july():
+    # Early June WTI front delivers July → deferred = July + 6 = January 2027.
+    today = dt.date(2026, 6, 16)
+    assert cs.build_deferred_ticker("CL", ".NYM", today, 6, front_lead_months=1, roll_day=20) == "CLF27.NYM"
+
+
+def test_slope_denominator_equals_realized_gap_near_roll():
+    # AC #2: the denominator is the realized months between the two legs. The
+    # deferred is anchored to the realized front month and offset by months_out,
+    # so the realized gap IS months_out (6) — independent of how far the realized
+    # front diverged from the calendar month. ingest passes months_out as the gap.
+    near_roll = cs.slope(70.0, 76.0, 6)
+    # Same prices scaled by a 5-month gap (what the pre-#12 calendar-anchored
+    # mismatch effectively produced) gives a materially different magnitude.
+    mis_scaled_old = cs.slope(70.0, 76.0, 5)
+    assert near_roll != pytest.approx(mis_scaled_old)
+    assert near_roll == pytest.approx(((76.0 - 70.0) / 70.0) / (6 / 12.0))
 
 
 # --- Row building ---------------------------------------------------------
@@ -193,7 +245,18 @@ def test_curve_config_ships_energy_underlyings():
 def test_curve_config_specs_are_complete():
     cfg = load_curve_config()
     for u in cs._underlyings(cfg):
-        assert {"symbol", "front_ticker", "deferred_root", "suffix", "months_out"} <= set(u)
+        assert {
+            "symbol", "front_ticker", "deferred_root", "suffix", "months_out",
+            "front_lead_months", "roll_day",
+        } <= set(u)
+
+
+def test_curve_config_expiry_rules_are_sane():
+    # #12: per-contract expiry rules live in config, not hardcoded in the module.
+    cfg = load_curve_config()
+    for u in cs._underlyings(cfg):
+        assert u["front_lead_months"] >= 0
+        assert 1 <= u["roll_day"] <= 31
 
 
 def test_flat_eps_from_config():

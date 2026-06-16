@@ -12,9 +12,11 @@ the yfinance ticker:
 * **front_price** — front-month close in USD (continuous front ticker, e.g.
   ``CL=F``).
 * **back_price** — the configured deferred contract's close in USD, fetched via
-  an explicit month-coded ticker (e.g. ``CLN26.NYM``); **NULL** when there is no
-  clean deferred leg (missing / NaN / stale / holiday). Never carried forward,
-  never ``0``.
+  an explicit month-coded ticker (e.g. ``CLN26.NYM``) anchored ``months_out``
+  delivery months past the **realized front delivery month** (not the calendar
+  month — #12, so near a roll the leg and its scaling stay aligned); **NULL**
+  when there is no clean deferred leg (missing / NaN / stale / holiday). Never
+  carried forward, never ``0``.
 * **spread** = ``back_price - front_price`` (signed, diagnostic); NULL when
   ``back_price`` is NULL.
 * **slope_pct** = ``((back - front) / front) / (months_between / 12)`` — the
@@ -118,9 +120,32 @@ def _clean_price(price) -> Optional[float]:
     return value
 
 
+def realized_front_month(snapshot_date: dt.date, front_lead_months: int, roll_day: int) -> tuple[int, int]:
+    """The active front contract's *realized delivery* ``(year, month)`` on
+    ``snapshot_date`` — what the continuous ``=F`` ticker actually represents,
+    which near a roll is **not** the calendar month (#12).
+
+    Energy front-months deliver ``front_lead_months`` ahead of the calendar
+    month (1 for CL/NG/RB/HO: a contract delivering month M trades through ~M-1).
+    On or after ``roll_day`` the front contract has expired and the active front
+    has rolled forward one further delivery month — so the late-June WTI front is
+    August (June + lead 1 + roll 1), not July. Pure / deterministic: it reads
+    only the passed snapshot date, never the host clock or timezone.
+
+    ``front_lead_months=0`` and a ``roll_day`` past month-end reduce to the
+    calendar month — the pre-#12 behaviour — so an in-month underlying is
+    unchanged.
+    """
+    offset = front_lead_months + (1 if snapshot_date.day >= roll_day else 0)
+    target = (snapshot_date.month - 1) + offset  # 0-based month index from Jan of snapshot year
+    year = snapshot_date.year + target // 12
+    month = target % 12 + 1
+    return year, month
+
+
 def deferred_month_code(front_month: int, months_out: int) -> tuple[str, int]:
     """The (yfinance month code, year-offset) for a contract ``months_out``
-    calendar months past ``front_month`` (1=Jan..12=Dec).
+    delivery months past ``front_month`` (1=Jan..12=Dec).
 
     Energy futures (CL/BZ/NG/RB/HO) list every consecutive month, so the target
     is simply ``front_month + months_out`` rolled into the month-code alphabet,
@@ -133,32 +158,51 @@ def deferred_month_code(front_month: int, months_out: int) -> tuple[str, int]:
     return _MONTH_CODES[month - 1], year_offset
 
 
-def build_deferred_ticker(deferred_root: str, suffix: str, today: dt.date, months_out: int) -> str:
+def build_deferred_ticker(
+    deferred_root: str,
+    suffix: str,
+    today: dt.date,
+    months_out: int,
+    front_lead_months: int = 0,
+    roll_day: int = 99,
+) -> str:
     """Construct the yfinance month-coded deferred ticker for the contract
-    ``months_out`` months past *this month* (a proxy for the front expiry month),
-    e.g. ``CL`` + ``.NYM`` on 2026-06 with months_out=6 → ``CLZ26.NYM``.
+    ``months_out`` delivery months past the **realized front delivery month**
+    (not the calendar month — #12).
+
+    The front month is resolved via :func:`realized_front_month`, so in late
+    June WTI (``front_lead_months=1``, ``roll_day=20``) the deferred is N months
+    past **August**: ``CL`` + ``.NYM``, months_out=6 → ``CLG27.NYM`` (Feb 2027),
+    not ``CLZ26.NYM``. The defaults (``front_lead_months=0``, ``roll_day=99``)
+    reduce to the calendar month — the pre-#12 behaviour.
 
     Symbology is fragile, so the actual fetch is defensive and per-underlying
     error-isolated; an unrecognised/illiquid ticker just yields a NULL back leg.
     """
-    code, year_offset = deferred_month_code(today.month, months_out)
-    year = today.year + year_offset
+    front_year, front_month = realized_front_month(today, front_lead_months, roll_day)
+    code, year_offset = deferred_month_code(front_month, months_out)
+    year = front_year + year_offset
     yy = f"{year % 100:02d}"
     return f"{deferred_root}{code}{yy}{suffix}"
 
 
-def slope(front: Optional[float], back: Optional[float], months_out: int) -> Optional[float]:
-    """Annualized % carry: ``((back - front) / front) / (months_out / 12)``.
+def slope(front: Optional[float], back: Optional[float], months_between: int) -> Optional[float]:
+    """Annualized % carry: ``((back - front) / front) / (months_between / 12)``.
+
+    ``months_between`` is the realized number of delivery months separating the
+    two fetched legs (front delivery month → deferred delivery month). It is the
+    same ``months_out`` the deferred ticker is offset by — both anchor to the
+    realized front month so they can never disagree (#12).
 
     None when either leg is None, or when ``front <= 0`` (the negative/zero-front
-    guard — never ``±inf``/NaN), or when ``months_out <= 0`` (misconfig). Sign:
-    > 0 contango, < 0 backwardation.
+    guard — never ``±inf``/NaN), or when ``months_between <= 0`` (misconfig).
+    Sign: > 0 contango, < 0 backwardation.
     """
     if front is None or back is None:
         return None
-    if front <= 0 or months_out <= 0:
+    if front <= 0 or months_between <= 0:
         return None
-    return ((back - front) / front) / (months_out / 12.0)
+    return ((back - front) / front) / (months_between / 12.0)
 
 
 def classify(slope_pct: Optional[float], eps: float = _DEFAULT_FLAT_EPS) -> Optional[str]:
@@ -179,16 +223,19 @@ def build_row(
     snapshot_date: dt.date,
     front_raw,
     back_raw,
-    months_out: int,
+    months_between: int,
     eps: float = _DEFAULT_FLAT_EPS,
 ) -> dict:
     """Assemble one curve_shape row from the two fetched closes. Pure given its
-    inputs — the network lives in the provider. A missing deferred leg yields
-    ``front_price`` only with back_price/spread/slope_pct/structure NULL."""
+    inputs — the network lives in the provider. ``months_between`` is the
+    realized delivery-month gap between the two legs (the same offset the
+    deferred ticker is built with — both anchor to the realized front month,
+    #12). A missing deferred leg yields ``front_price`` only with
+    back_price/spread/slope_pct/structure NULL."""
     front = _clean_price(front_raw)
     back = _clean_price(back_raw)
     spread = (back - front) if (front is not None and back is not None) else None
-    slope_pct = slope(front, back, months_out)
+    slope_pct = slope(front, back, months_between)
     return {
         "symbol": symbol,
         "date": snapshot_date.isoformat(),
@@ -260,7 +307,12 @@ def _upsert(engine: Engine, row: dict) -> None:
 def ingest_underlying(engine: Engine, spec: dict, snapshot_date: dt.date, eps: float) -> dict:
     """Fetch front + deferred closes for one underlying and upsert the row."""
     deferred_ticker = build_deferred_ticker(
-        spec["deferred_root"], spec["suffix"], snapshot_date, spec["months_out"]
+        spec["deferred_root"],
+        spec["suffix"],
+        snapshot_date,
+        spec["months_out"],
+        spec.get("front_lead_months", 0),
+        spec.get("roll_day", 99),
     )
     front_raw, back_raw = get_curve(spec["front_ticker"], deferred_ticker)
     row = build_row(spec["symbol"], snapshot_date, front_raw, back_raw, spec["months_out"], eps)
