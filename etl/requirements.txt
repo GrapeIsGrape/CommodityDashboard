@@ -3,3 +3,4 @@ alembic==1.14.0
 psycopg2-binary==2.9.10
 PyYAML==6.0.2
 requests==2.32.3
+yfinance==0.2.66
