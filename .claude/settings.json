@@ -45,6 +45,7 @@
       "Bash(docker compose:*)",
       "Bash(docker:*)",
       "Bash(nc:*)",
+      "Bash(command -v:*)",
       "Bash(python -c:*)",
       "Bash(psql:*)",
       "Bash(PGPASSWORD=change_me psql:*)",
