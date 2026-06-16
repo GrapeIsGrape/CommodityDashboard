@@ -44,6 +44,17 @@ def load_symbols(path: str | os.PathLike | None = None) -> dict:
         return yaml.safe_load(fh)
 
 
+def load_curve_config(path: str | os.PathLike | None = None) -> dict:
+    """Load the futures curve-shape config (the ``curve`` block of
+    config/symbols.yaml): per-underlying front/deferred ticker specs + the
+    annualized-slope deadband default. Returns ``{}`` if the block is absent.
+
+    Reuses the symbols config (no separate file), overridable via SYMBOLS_CONFIG
+    or the ``path`` arg, consistent with :func:`load_symbols`.
+    """
+    return load_symbols(path).get("curve", {})
+
+
 def load_fred_series(path: str | os.PathLike | None = None) -> dict:
     """Load the FRED macro series config from config/fred_series.yaml.
 

@@ -78,3 +78,47 @@ volatility_indices:
     - { ticker: "^VIX", symbol: VIX, name: CBOE Volatility Index, ingest: false }
     - { ticker: "^GVZ", symbol: GVZ, name: CBOE Gold Volatility Index, ingest: true }
     - { ticker: "^OVX", symbol: OVX, name: CBOE Crude Oil Volatility Index, ingest: true }
+
+# Futures term-structure / curve shape (Panel C — contango vs backwardation).
+#
+# The curve-shape ETL (etl/sources/curve_shape.py) takes a daily front-vs-ONE-
+# deferred-contract basis snapshot per underlying → curve_shape, keyed by our
+# `symbol` (e.g. CL), NOT the yfinance ticker. v1 is front vs one deferred leg
+# only — not a full multi-point curve.
+#
+# Per underlying:
+#   symbol        - our future root, stored in curve_shape.symbol (NOT yfinance).
+#   front_ticker  - yfinance continuous front-month ticker (e.g. CL=F).
+#   suffix        - exchange suffix for the explicit month-coded deferred ticker
+#                   (.NYM CME/NYMEX energy, .CBT CBOT, .CMX COMEX). yfinance
+#                   month-coded symbology is <ROOT><MONTHCODE><YY><SUFFIX>, e.g.
+#                   CLN26.NYM (month codes F G H J K M N Q U V X Z = Jan..Dec).
+#   deferred_root - root for the month-coded deferred ticker (often == front_ticker
+#                   minus "=F", but kept explicit because symbology is fragile).
+#   months_out    - deferred contract is this many calendar months past the
+#                   front month; the annualized slope divides by months_out/12.
+#                   The resolver (curve_shape.deferred_month_code) computes the
+#                   target as front_month + months_out, which is correct for the
+#                   energy contracts here because they list every consecutive
+#                   month. Underlyings whose listing months are NOT consecutive
+#                   (grains/softs) would need a next-listed-month resolver and
+#                   are intentionally out of scope (see below) — do not add them
+#                   here trusting this naive mapping.
+#
+# MUST-HAVE: the five energy underlyings with a real free front-month future
+# (CL, BZ, NG, RB, HO). Anything not listed here is intentionally out of scope:
+# base metals (ALI/ZNC/NICKEL, LME) have no free curve — flagged-not-faked, same
+# boundary as IV; grains/softs term structure is dominated by old-crop/new-crop
+# seasonality and is deferred (would falsely scream a regime).
+curve:
+  defaults:
+    # Annualized-slope deadband (decimal, i.e. 0.005 = 0.5% annualized carry):
+    # |slope_pct| inside [-eps, +eps] is reported 'flat' rather than flip-flopping
+    # contango/backwardation day to day on noise. Non-zero by design.
+    flat_eps: 0.005
+  underlyings:
+    - { symbol: CL, front_ticker: "CL=F", deferred_root: CL, suffix: ".NYM", months_out: 6 }
+    - { symbol: BZ, front_ticker: "BZ=F", deferred_root: BZ, suffix: ".NYM", months_out: 6 }
+    - { symbol: NG, front_ticker: "NG=F", deferred_root: NG, suffix: ".NYM", months_out: 6 }
+    - { symbol: RB, front_ticker: "RB=F", deferred_root: RB, suffix: ".NYM", months_out: 6 }
+    - { symbol: HO, front_ticker: "HO=F", deferred_root: HO, suffix: ".NYM", months_out: 6 }
