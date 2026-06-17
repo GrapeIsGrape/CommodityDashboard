@@ -10,6 +10,12 @@
 #   id    - FRED series id (https://fred.stlouisfed.org/series/<id>)
 #   label - human-readable name for the dashboard
 #   panel - dashboard panel grouping (Panel A only for now)
+#   freq  - native release cadence: daily | monthly | quarterly. Drives the
+#           panel's frequency-aware change windows AND staleness model (a
+#           monthly series ~20 days old is normal cadence, not stale).
+#   group - Panel A visual bucket: usd | real_rates | inflation | growth_labor
+#           | risk_regime. The panel reads its grouping from here rather than
+#           hardcoding the membership.
 #
 # Excluded / flagged:
 #   ISM PMIs (manufacturing/services) are NOT freely redistributable on FRED
@@ -23,24 +29,24 @@ defaults:
 
 series:
   # Rates & real yields
-  - { id: DGS10,    label: "10-Year Treasury Yield",            panel: A }
-  - { id: DFII10,   label: "10-Year TIPS (Real) Yield",         panel: A }
-  - { id: T10YIE,   label: "10-Year Breakeven Inflation Rate",  panel: A }
+  - { id: DGS10,    label: "10-Year Treasury Yield",            panel: A, freq: daily,     group: real_rates }
+  - { id: DFII10,   label: "10-Year TIPS (Real) Yield",         panel: A, freq: daily,     group: real_rates }
+  - { id: T10YIE,   label: "10-Year Breakeven Inflation Rate",  panel: A, freq: daily,     group: real_rates }
 
   # Inflation
-  - { id: CPIAUCSL, label: "CPI (All Urban Consumers)",         panel: A }
-  - { id: PCEPI,    label: "PCE Price Index",                   panel: A }
-  - { id: PPIACO,   label: "PPI (All Commodities)",             panel: A }
+  - { id: CPIAUCSL, label: "CPI (All Urban Consumers)",         panel: A, freq: monthly,   group: inflation }
+  - { id: PCEPI,    label: "PCE Price Index",                   panel: A, freq: monthly,   group: inflation }
+  - { id: PPIACO,   label: "PPI (All Commodities)",             panel: A, freq: monthly,   group: inflation }
 
   # Employment
-  - { id: PAYEMS,   label: "Nonfarm Payrolls",                  panel: A }
-  - { id: UNRATE,   label: "Unemployment Rate",                 panel: A }
+  - { id: PAYEMS,   label: "Nonfarm Payrolls",                  panel: A, freq: monthly,   group: growth_labor }
+  - { id: UNRATE,   label: "Unemployment Rate",                 panel: A, freq: monthly,   group: growth_labor }
 
   # Growth
-  - { id: GDPC1,    label: "Real GDP",                          panel: A }
+  - { id: GDPC1,    label: "Real GDP",                          panel: A, freq: quarterly, group: growth_labor }
 
   # Volatility
-  - { id: VIXCLS,   label: "CBOE Volatility Index (VIX)",       panel: A }
+  - { id: VIXCLS,   label: "CBOE Volatility Index (VIX)",       panel: A, freq: daily,     group: risk_regime }
 
   # Dollar (DXY proxy — see note above)
-  - { id: DTWEXBGS, label: "Trade-Weighted USD Index (DXY proxy)", panel: A }
+  - { id: DTWEXBGS, label: "Trade-Weighted USD Index (DXY proxy)", panel: A, freq: daily,  group: usd }

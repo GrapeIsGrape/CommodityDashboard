@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "_panel.html" import panel %}
+{% block title %}Panel A — Macro / Cross-Asset &middot; CommodityDashboard{% endblock %}
+
+{% block style %}
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; margin-bottom: 24px; }
+  .panel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .panel-title { margin: 0; font-size: 16px; }
+  .panel-sub { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .bucket { margin-bottom: 22px; }
+  .bucket-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 8px; }
+  .bucket-title { font-size: 14px; font-weight: 700; margin: 0; }
+  .bucket-sub { color: var(--muted); font-size: 12px; }
+  /* USD + real rates carry the primary visual weight. */
+  .bucket-primary .bucket-title { font-size: 15px; }
+  .bucket-primary { border-left: 3px solid #5aa9ff; padding-left: 12px; }
+  .bucket-compact td, .bucket-compact th { padding: 4px 10px; font-size: 13px; }
+  /* Neutral coloring only — no good/bad red/green anywhere in Panel A. */
+  .arrow { color: var(--muted); font-weight: 700; }
+  .caption { color: var(--muted); font-size: 11px; }
+  .secondary { color: var(--muted); font-size: 12px; }
+  .no-prior { color: var(--muted); font-style: italic; }
+  .stale-badge { background: var(--stale); color: var(--stale-fg); font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  .freq-tag { color: var(--muted); font-size: 11px; }
+  .caveat { color: #5aa9ff; font-size: 12px; margin-bottom: 12px; }
+  .empty { color: var(--muted); padding: 24px 0; }
+  .footnotes { color: var(--muted); font-size: 11px; margin-top: 14px; line-height: 1.6; }
+  .footnotes li { margin-bottom: 2px; }
+{% endblock %}
+
+{% block content %}
+{% call panel("Panel A — Macro / Cross-Asset", "Cross-asset weather backdrop · context, not decisions (Panel D is where decisions live)") %}
+
+  {% if view.error %}
+    <div class="empty">Macro data is currently unavailable. The database could not be reached or is not yet migrated — retry shortly.</div>
+  {% elif view.is_empty %}
+    <div class="empty">No macro data yet. Run the FRED ETL to populate Panel A.</div>
+  {% else %}
+
+  <div class="caveat">
+    USD shown is <strong>DTWEXBGS — DXY proxy (broad trade-weighted USD)</strong>, NOT the 6-currency ICE DXY;
+    levels and magnitudes differ. Changes are recomputed from current stored rows each visit (FRED revisions move them legitimately).
+  </div>
+
+  {% for group in view.groups %}
+    {% if group.rows %}
+    {% set primary = group.key in ['usd', 'real_rates'] %}
+    {% set compact = group.key == 'growth_labor' %}
+    <div class="bucket {{ 'bucket-primary' if primary }} {{ 'bucket-compact' if compact }}">
+      <div class="bucket-head">
+        <h3 class="bucket-title">{{ group.title }}</h3>
+        <span class="bucket-sub">{{ group.subtitle }}</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>series</th>
+            <th>label</th>
+            <th>level</th>
+            <th>change</th>
+            <th>secondary</th>
+            <th>as of</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in group.rows %}
+          <tr>
+            <td>{{ row.series_id }} <span class="freq-tag">{{ row.freq }}</span></td>
+            <td>{{ row.label }}</td>
+            <td>{{ row.level_label }}</td>
+            <td>
+              <span class="arrow">{{ row.headline_arrow }}</span>
+              <span class="{{ 'no-prior' if '(no prior)' in row.headline_label }}">{{ row.headline_label }}</span>
+              <span class="caption">{{ row.headline_caption }}</span>
+            </td>
+            <td class="secondary">
+              {% for cap, val in row.secondary %}{{ cap }} {{ val }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </td>
+            <td>{{ fmt_date(row.date) }}{% if row.stale %}<span class="stale-badge">STALE</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  <ul class="footnotes">
+    <li>DTWEXBGS is the broad trade-weighted dollar (DXY <em>proxy</em>) — not ICE DXY; magnitudes differ.</li>
+    <li>10y real yield is FRED's DFII10 shown directly (not recomputed); the breakeven identity is T10YIE ≈ DGS10 − DFII10.</li>
+    <li>Realized-inflation rows headline YoY % (from the stored 12-months-prior row); the raw ~310 index level is secondary.</li>
+    <li>VIX is the S&amp;P implied-vol / equity-vol regime — cross-asset context, not a commodity vol metric and not a rich/cheap signal. For commodity vol see <a href="/panel/d">Panel D</a> (GVZ/OVX).</li>
+    <li>Frequency-aware staleness: monthly flagged only when materially overdue, quarterly later still; a monthly print a few weeks old is normal cadence.</li>
+  </ul>
+
+  {% endif %}
+{% endcall %}
+{% endblock %}
