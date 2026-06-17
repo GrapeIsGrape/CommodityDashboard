@@ -1,0 +1,12 @@
+{# Reusable panel shell: a titled card other panels (A/B/C) will reuse. #}
+{% macro panel(title, subtitle="") %}
+<section class="panel">
+  <div class="panel-head">
+    <h2 class="panel-title">{{ title }}</h2>
+    {% if subtitle %}<span class="panel-sub">{{ subtitle }}</span>{% endif %}
+  </div>
+  <div class="panel-body">
+    {{ caller() }}
+  </div>
+</section>
+{% endmacro %}

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}CommodityDashboard{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #11151c; --panel: #1a212b; --fg: #e6edf3; --muted: #8b97a7;
+      --line: #2a3340; --sell: #1f7a3d; --sell-fg: #d6ffe0;
+      --amber: #6b4e00; --amber-fg: #ffe8a3; --stale: #5a1f1f; --stale-fg: #ffd0d0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--fg);
+      font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px; line-height: 1.4;
+    }
+    header { padding: 16px 24px; border-bottom: 1px solid var(--line); }
+    header h1 { margin: 0; font-size: 18px; }
+    header .sub { color: var(--muted); font-size: 12px; }
+    main { padding: 24px; max-width: 1200px; }
+    a { color: #5aa9ff; }
+    {% block style %}{% endblock %}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>CommodityDashboard</h1>
+    <div class="sub">Read-only commodity options monitor &middot; <a href="/health">/health</a></div>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
