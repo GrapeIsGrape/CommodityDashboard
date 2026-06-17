@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% from "_panel.html" import panel %}
+{% block title %}Panel C — Positioning &amp; Flow &middot; CommodityDashboard{% endblock %}
+
+{% block style %}
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; margin-bottom: 24px; }
+  .panel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .panel-title { margin: 0; font-size: 16px; }
+  .panel-sub { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tbody tr.crowded-long td { background: var(--sell); color: var(--sell-fg); font-weight: 700; }
+  tbody tr.crowded-short td { background: #7a1f5a; color: #ffd6f0; font-weight: 700; }
+  .stale-badge { background: var(--stale); color: var(--stale-fg); font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  .accruing { color: var(--muted); }
+  .empty { color: var(--muted); padding: 24px 0; }
+  .strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .curve-card { background: #15202e; border: 1px solid #3a5a7a; border-radius: 6px; padding: 10px 14px; min-width: 160px; }
+  .curve-card .cv-sym { font-weight: 700; }
+  .curve-card .cv-meta { color: var(--muted); font-size: 12px; }
+  .curve-card.backwardation { border: 2px solid #ff7a59; background: #2e1a15; }
+  .curve-card.backwardation .cv-struct { color: #ffb199; font-weight: 700; text-transform: uppercase; }
+  .curve-card.contango .cv-struct { color: #8fd0ff; }
+  .curve-card.flat .cv-struct { color: var(--muted); }
+  .curve-card.no-curve { border-style: dashed; }
+  .curve-card.no-curve .cv-struct { color: var(--muted); font-style: italic; }
+  .context-note { color: #5aa9ff; font-size: 12px; margin-bottom: 12px; }
+  .footnotes { color: var(--muted); font-size: 11px; margin-top: 14px; line-height: 1.6; }
+  .footnotes li { margin-bottom: 2px; }
+  .legend { color: var(--muted); font-size: 12px; margin: 8px 0 14px; }
+  .legend .swatch-long { color: var(--sell-fg); background: var(--sell); padding: 1px 6px; border-radius: 4px; }
+  .legend .swatch-short { color: #ffd6f0; background: #7a1f5a; padding: 1px 6px; border-radius: 4px; }
+  td.idx-long { color: var(--sell-fg); }
+  td.idx-short { color: #ffd6f0; }
+{% endblock %}
+
+{% block content %}
+{% call panel("Panel C — Positioning & Flow", "CFTC COT (net large-spec, 3y index) + energy curve shape") %}
+
+  {% if view.error %}
+    <div class="empty">Positioning data is currently unavailable. The database could not be reached or is not yet migrated — retry shortly.</div>
+  {% else %}
+
+  {# --- Energy curve strip (separate from the COT table) --- #}
+  {% if view.curve_cards %}
+  <div class="context-note">
+    Energy term structure — <strong>CURRENT</strong> structure, not a percentile.
+    Backwardation is often seasonally normal (NG/RB into summer, HO into winter); v1 has no seasonal adjustment.
+  </div>
+  <div class="strip">
+    {% for cv in view.curve_cards %}
+    <div class="curve-card {{ cv.structure_class }}">
+      <div class="cv-sym">{{ cv.symbol }} <span class="cv-struct">{{ cv.structure_label }}</span></div>
+      <div class="cv-meta">slope {{ fmt_pct(cv.slope_pct) }} annualized</div>
+      <div class="cv-meta">front {{ fmt_price(cv.front_price) }} · back {{ fmt_price(cv.back_price) }}</div>
+      <div class="cv-meta">spread {{ fmt_price(cv.spread) }}</div>
+      <div class="cv-meta">{{ fmt_date(cv.date) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# --- COT table --- #}
+  {% if view.is_empty %}
+    <div class="empty">No positioning data yet. Run the CFTC / curve-shape ETL to populate Panel C.</div>
+  {% elif not view.cot_rows %}
+    <div class="empty">No COT reports yet (energy curve strip shown above).</div>
+  {% else %}
+  <div class="context-note">
+    COT as of Tuesday <strong>{{ fmt_date(view.expected_report_date) }}</strong>
+    (CFTC Legacy futures-only, released the following Friday ~15:30 ET).
+    A COT extreme flags the side of the tail risk = the option you should <strong>NOT</strong> be short.
+  </div>
+  <div class="legend">
+    <span class="swatch-long">crowded LONG ≥ 80</span> → tail risk DOWN → don't be short puts / lean calls &nbsp;·&nbsp;
+    <span class="swatch-short">crowded SHORT ≤ 20</span> → tail risk UP → don't be short calls / lean puts
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>symbol</th>
+        <th>report_date</th>
+        <th>noncomm_long</th>
+        <th>noncomm_short</th>
+        <th>net_spec</th>
+        <th>net_spec %OI</th>
+        <th>cot_index_3y</th>
+        <th>open_interest</th>
+        <th>structure</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in view.cot_rows %}
+      <tr class="{{ row.crowding }}"{% if row.inference %} title="{{ row.inference }}"{% endif %}>
+        <td>{{ row.symbol }}</td>
+        <td>{{ fmt_date(row.report_date) }}{% if row.stale %}<span class="stale-badge">STALE</span>{% endif %}</td>
+        <td>{{ fmt_int(row.noncomm_long) }}</td>
+        <td>{{ fmt_int(row.noncomm_short) }}</td>
+        <td>{{ fmt_int(row.net_spec) }}</td>
+        <td>{{ fmt_pct(row.net_spec_pct_oi) }}</td>
+        <td class="{{ 'accruing' if row.index_value is none }}{{ ' idx-long' if row.crowding == 'crowded-long' }}{{ ' idx-short' if row.crowding == 'crowded-short' }}">{{ row.index_label }}</td>
+        <td>{{ fmt_int(row.open_interest) }}</td>
+        <td>{% if row.structure_echo %}{{ row.structure_echo }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <ul class="footnotes">
+    <li>Legacy COT — non-comm = all large specs (not managed-money); the metric is net large-spec, not MM-net.</li>
+    <li>COT index is vs each contract's own 3-year range ({{ lookback_weeks }} weeks) — a structural perma-long (e.g. gold) sitting high is not universally extreme.</li>
+    <li>open_interest is shown so a high index in a thin/low-OI contract (OJ/LBR/livestock) can be discounted as noise.</li>
+    <li>Curve strip shows CURRENT structure only — it does not imply "backwardation = unusual".</li>
+  </ul>
+
+  {% endif %}
+{% endcall %}
+{% endblock %}

@@ -6,16 +6,16 @@ This file is the **PM agent's living plan** — the shared "brain" the team read
 - **Who edits:** the **PM** updates this after each cycle (ticket done, phase advanced, new tickets surfaced). The BA/Dev/QA/Trader *read* it; they don't edit it.
 - Keep it short and current. When it disagrees with the GitHub issues or the commits, the issues/commits are reality — reconcile and fix this file.
 
-_Last reconciled: 2026-06-17 (Phase 4 STARTED: #13 dashboard foundation + Panel D (Volatility) shipped — SecAudit✓ (1 HIGH found+fixed: route error isolation) QA✓ UAT✓. Next: Phase 4 Panels A/B/C + macro sub-panel + sentiment placeholder, or the deferred scheduler.)_
+_Last reconciled: 2026-06-17 (Phase 4 IN PROGRESS: #13 foundation + Panel D (Volatility) and #14 Panel C (Positioning & Flow) shipped — both SecAudit✓ QA✓ UAT✓ (#13 had 1 HIGH found+fixed: route error isolation; #14 clean). Next: Phase 4 Panels A/B + macro sub-panel + sentiment placeholder, or the deferred scheduler.)_
 
 ---
 
 ## Phase pointer
 
-**Current position: Phase 4 STARTED (dashboard).** Phase 2 complete (FRED #3, EIA #4, USDA #6, CFTC #7; scheduler deferred). Phase 3 ETL sources complete (#9 IV, #10 vol indices, #11 curve, #12 anchoring). **Phase 4: dashboard foundation + Panel D (Volatility) → `GET /panel/d` DONE (#13)** — Jinja2 server-side templating + base layout + reusable panel shell; read-only `iv_metrics` view; conjunctive rich-highlight (`iv_rank≥0.70 AND iv_rv_spread>0`); honest cold-start `— (N/20)`; per-row staleness vs last expected session; GVZ/OVX regime strip; DB-error isolation (no 500). No migration.
-**Next up: the rest of Phase 4 — Panels A (macro), B (fundamentals/inventory), C (positioning+curve), the macro sub-panel (TLT/VTI/QQQ), and the empty sentiment placeholder — OR the deferred scheduler wiring. PM's call; Panel D set the pattern (read-only panel module + Jinja2 template + tests). Scheduler is the smaller step and unblocks live IV-rank accrual (per-name rank stays `— (N/20)` until snapshots run daily).**
+**Current position: Phase 4 IN PROGRESS (dashboard).** Phase 2 complete (FRED #3, EIA #4, USDA #6, CFTC #7; scheduler deferred). Phase 3 ETL sources complete (#9 IV, #10 vol indices, #11 curve, #12 anchoring). **Phase 4 done so far:** **Panel D (Volatility) → `GET /panel/d` (#13)** — Jinja2 foundation (base layout + reusable panel shell) + read-only `iv_metrics` view; conjunctive rich-highlight (`iv_rank≥0.70 AND iv_rv_spread>0`); cold-start `— (N/20)`; daily staleness; GVZ/OVX strip. **Panel C (Positioning & Flow) → `GET /panel/c` (#14)** — read-only `cot` + `curve_shape`; headline 3y COT index (156-wk net-spec percentile) + loud ≥80/≤20 crowding flags with directional seller inference; cold-start `— (accruing M/156)`; separate 5-card energy curve strip (loud backwardation, NULL `— (no curve)` ≠ flat); COT-correct weekly Tue→Fri staleness + holiday grace. Both no migration, both DB-error-isolated (no 500).
+**Next up: the rest of Phase 4 — Panel A (macro → `macro_metrics`), Panel B (fundamentals/inventory → `inventories`), the macro sub-panel (TLT/VTI/QQQ → `prices`), and the empty sentiment placeholder — OR the deferred scheduler wiring. PM's call; the Panel D/C pattern (read-only panel module + Jinja2 template + pure testable logic + tests) is now well-established. Scheduler is the smaller step and unblocks live IV-rank accrual (Panel D per-name rank stays `— (N/20)` until snapshots run daily).**
 
-Open backlog: ~~**#8**~~ DONE · ~~**#12**~~ DONE · ~~**#13** (dashboard foundation + Panel D)~~ **DONE**. **Backlog clear** — next work is another Phase 4 panel or the deferred scheduler.
+Open backlog: ~~**#8**~~ DONE · ~~**#12**~~ DONE · ~~**#13** (foundation + Panel D)~~ **DONE** · ~~**#14** (Panel C)~~ **DONE**. **Backlog clear** — next work is another Phase 4 panel or the deferred scheduler.
 
 The PM loop crosses phase boundaries by default.
 
@@ -29,7 +29,7 @@ The PM loop crosses phase boundaries by default.
 | 1 — Foundation & schema | Compose scaffold (#1), data tables migration `0002` (#2) | ✅ done |
 | 2 — Free-data ETL | FRED #3, EIA #4, USDA #6, CFTC #7 (idempotent, backfilled); **scheduler deferred** | ✅ done (sources) |
 | 3 — Volatility & positioning ETL | IV → `iv_metrics` (#9 ✅), vol indices GVZ/OVX (#10 ✅), `curve_shape` (#11 ✅) | ✅ done (sources; scheduler deferred) |
-| 4 — Dashboard (FastAPI) | four panels + macro sub-panel + empty sentiment panel; surface COT extremes, rich IV, backwardation flags | 🔄 started — foundation + Panel D (#13 ✅); Panels A/B/C + sub-panel + sentiment pending |
+| 4 — Dashboard (FastAPI) | four panels + macro sub-panel + empty sentiment panel; surface COT extremes, rich IV, backwardation flags | 🔄 in progress — foundation + Panel D (#13 ✅) + Panel C (#14 ✅); Panels A/B + sub-panel + sentiment pending |
 | 5 — Polish & deploy | deploy Compose stack, release calendar, health checks/logging, redeploy docs | ▫️ not started |
 
 ---
@@ -59,4 +59,7 @@ Also open (non-Phase-3): **#8** add `schema_version` to dashboard `/health` — 
 - **Schedule the IV / vol-index / curve snapshots during/after the relevant session** (Trader UAT on #9/#10/#11) — off-hours/stale legs store NULL; the deferred scheduler ticket should run these when fresh settles exist.
 - **Panel D secondary sort by `iv_rv_spread DESC during cold-start accrual** (Trader UAT on #13, nice-to-have) — while every per-name `iv_rank` is NULL (~20-session warm-up), `iv_rank DESC NULLS LAST` collapses all names into one bucket so the table is unordered; a secondary sort on IV−RV would make it useful sooner. Polish, not blocking — the GVZ/OVX strip carries the decision in that window.
 - **Panel D `— (N/20)` countdown is ~1 session imprecise** (Trader UAT on #13, cosmetic) — the panel counts non-null `atm_iv` incl. today while `iv.py` lights rank at 19 priors + today, so the displayed ETA can be off by one session. No effect on any tradeable number; fix only if it confuses.
-- **US market-holiday table in Panel D staleness is fixed 2025–2026** (QA/UAT note on #13) — `panel_d.py` `_US_MARKET_HOLIDAYS` must be extended as years roll forward; an unrecorded future holiday risks at most one false STALE badge, never bad data.
+- **US market-holiday table in Panel D staleness is fixed 2025–2026** (QA/UAT note on #13) — `panel_d.py` `_US_MARKET_HOLIDAYS` must be extended as years roll forward; an unrecorded future holiday risks at most one false STALE badge, never bad data. Same applies to Panel C's `_US_FEDERAL_HOLIDAYS` table (#14).
+- **Panel D × Panel C cross-reference: rich-IV ∧ COT-extreme = highest-conviction "sell the opposite side"** (Trader consult+UAT on #14, nice-to-have) — a name that is both rich IV (Panel D) and at a crowded-spec extreme (Panel C) is the strongest sell-the-other-side setup; surface a cross-panel flag/note once both panels exist. Deferred from #14, worth a dedicated ticket.
+- **Panel C `slope_pct` percentile vs own 1y history + seasonality self-calibration** (Trader consult on #14, future ticket) — make the curve backwardation flag self-calibrating like the COT index (so seasonally-normal energy backwardation isn't read as a signal); needs a per-name seasonal/own-history model. Separate ticket.
+- **Panel C Friday-morning intraday staleness over-eagerness** (QA note on #14, cosmetic) — `expected_cot_report_date` treats the whole Friday as past the ~15:30 ET release, so a Friday-pre-release read could badge the still-current row STALE for a few hours; day-granularity is acceptable for v1, holiday grace absorbs most. Fix only if intraday staleness matters.
