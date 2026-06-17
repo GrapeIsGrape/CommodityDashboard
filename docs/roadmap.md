@@ -51,6 +51,9 @@ Also open (non-Phase-3): **#8** add `schema_version` to dashboard `/health` — 
 - ISM PMIs (licensed) and ICE DXY — excluded; DXY proxied by FRED `DTWEXBGS`.
 - Base metals COT (ALI/ZNC/NICKEL) — LME, no CFTC legacy report.
 
+## Recently shipped (out of phase)
+- ~~**#17 — dashboard crash-loop on Railway (`ModuleNotFoundError: No module named 'etl'`)**~~ — **DONE (2026-06-18, `468f320`)**: `panel_d.py` imported `_MIN_HISTORY_OBS` from `etl.sources.iv`, but the dashboard image ships no `etl/`. Relocated the constant to new stdlib-only `common/constants.py` (single source of truth); `iv.py` re-exports it, `panel_d.py` imports from `common.constants`; static-scan regression guard (`test_no_dashboard_module_imports_etl`) forbids any future dashboard→etl import. No migration/dep/env.
+
 ## Surfaced-but-not-yet-filed (PM appends here as Dev blockers / Trader UAT findings arrive)
 - **Evaluate additional commodity vol indices for `iv_metrics`** (Trader UAT on #10) — esp. `^VXSLV` (silver/SLV); GVZ/OVX are the only CBOE *commodity* vol indices with durable Yahoo history, VXSLV has been intermittently discontinued. Follow-up should *gate on the index still publishing* (flag-not-fake), reusing the #10 config `indices` list (zero schema change). Not Phase-3-blocking.
 - **Panel-D staleness flag for vol-index rows** (Trader UAT on #10) — render `snapshot_date` and flag when the latest GVZ/OVX close is stale (> N days, holiday/halt gap). Belongs with the Phase 4 dashboard ticket, not the ETL.
