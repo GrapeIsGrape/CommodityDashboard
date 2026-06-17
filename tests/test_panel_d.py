@@ -29,7 +29,7 @@ from dashboard.panels.panel_d import (
     last_expected_session,
     rank_display,
 )
-from etl.sources.iv import _MIN_HISTORY_OBS
+from common.constants import _MIN_HISTORY_OBS
 
 _DB_ENV = {
     "POSTGRES_USER": "commodity",
@@ -38,6 +38,34 @@ _DB_ENV = {
     "POSTGRES_PORT": "5432",
     "POSTGRES_DB": "commodity",
 }
+
+
+# --- Regression guard: no dashboard -> etl import coupling -----------------
+
+def test_no_dashboard_module_imports_etl():
+    """The dashboard ships its own image (CLAUDE.md §7) which does NOT contain
+    the ``etl`` package nor yfinance/requests. A plain ``import`` test can't
+    catch a leak because the dev/CI sys.path has ``etl/`` present, so scan the
+    dashboard source tree statically for any ``from etl`` / ``import etl``.
+
+    This guards the #17 production crash-loop (panel_d.py reaching into
+    ``etl.sources.iv`` for a constant now homed in ``common.constants``)."""
+    import pathlib
+    import re
+
+    dashboard_root = pathlib.Path(__file__).resolve().parents[1] / "dashboard"
+    pattern = re.compile(r"^\s*(from\s+etl[\s.]|import\s+etl[\s.]?)", re.MULTILINE)
+
+    offenders = []
+    for path in dashboard_root.rglob("*.py"):
+        text_src = path.read_text(encoding="utf-8")
+        if pattern.search(text_src):
+            offenders.append(str(path))
+
+    assert offenders == [], (
+        "dashboard modules must not import the etl package (it is absent from "
+        f"the dashboard image): {offenders}"
+    )
 
 
 # --- Conjunctive highlight ------------------------------------------------

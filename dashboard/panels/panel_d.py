@@ -15,8 +15,10 @@ This module is **read-only** — SELECT only, never a write. It holds:
   pure-math style of ``etl/sources/iv.py``.
 
 The ``20`` accrual threshold is **not** redefined here — it is imported from
-``etl.sources.iv._MIN_HISTORY_OBS`` so the UI label stays in lockstep with the
-ETL that populates ``iv_rank`` / ``iv_percentile``.
+``common.constants._MIN_HISTORY_OBS`` (the single shared definition consumed by
+both the ETL writer and this reader) so the UI label stays in lockstep with the
+ETL that populates ``iv_rank`` / ``iv_percentile``. The dashboard image does not
+ship the ``etl`` package, so this constant must come from ``common/``.
 """
 
 import datetime as dt
@@ -29,7 +31,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from common.config import load_symbols
-from etl.sources.iv import _MIN_HISTORY_OBS
+from common.constants import _MIN_HISTORY_OBS
 
 logger = logging.getLogger("dashboard.panel_d")
 

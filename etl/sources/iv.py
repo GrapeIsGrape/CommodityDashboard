@@ -43,6 +43,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from common.config import get_database_url, load_symbols
+from common.constants import _MIN_HISTORY_OBS
 
 logger = logging.getLogger("etl.iv")
 
@@ -50,7 +51,10 @@ _SOURCE = "yfinance"
 _RV_WINDOW = 30
 _TRADING_DAYS = 252
 _RANK_WINDOW_DAYS = 365  # ~one trading year of trailing snapshots for rank/pct.
-_MIN_HISTORY_OBS = 20    # below this, iv_rank / iv_percentile stay NULL.
+# _MIN_HISTORY_OBS (= 20): below this, iv_rank / iv_percentile stay NULL. It is
+# defined once in common.constants (imported above) and re-exported via that
+# module-level binding so both this ETL writer and the Panel D reader — built as
+# separate images — share a single source of truth.
 _MIN_DTE = 7             # skip about-to-expire contracts; pick the first expiry >= this.
 # Yahoo reports a degenerate near-zero IV (~1e-5) for zero-bid/stale contracts —
 # common when the market is closed. No real ETF ATM option is below ~1% IV, so
