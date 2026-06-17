@@ -24,6 +24,7 @@
       "Bash(git branch:*)",
       "Bash(git rev-parse:*)",
       "Bash(git -C /Users/albertwong/Documents/GitHub/CommodityDashboard:*)",
+      "Bash(git restore --staged:*)",
       "Bash(gh issue view:*)",
       "Bash(gh issue list:*)",
       "Bash(gh pr view:*)",
@@ -80,6 +81,20 @@
       "Bash(rm -rf /Users/albertwong/Documents/GitHub/CommodityDashboard/.venv:*)",
       "Edit(//Users/albertwong/Documents/GitHub/CommodityDashboard/**)",
       "Write(//Users/albertwong/Documents/GitHub/CommodityDashboard/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -c '.tool_input as $ti | ($ti.command // \"\") as $cmd | ($cmd | sub(\"^((POSTGRES_USER|POSTGRES_PASSWORD|POSTGRES_HOST|POSTGRES_PORT|POSTGRES_DB|PGPASSWORD)=[^ ]+ +)+\";\"\")) as $clean | if $clean == $cmd then {} else {hookSpecificOutput:{hookEventName:\"PreToolUse\",updatedInput:($ti + {command:$clean})}} end'",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }
