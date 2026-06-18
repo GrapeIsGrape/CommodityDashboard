@@ -20,7 +20,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError
 
 from common.config import get_database_url
-from dashboard.panels import panel_a, panel_b, panel_c, panel_d
+from dashboard.panels import panel_a, panel_b, panel_c, panel_d, panel_macro
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("dashboard")
@@ -48,6 +48,7 @@ def index() -> str:
         '<a href="/panel/b">Panel B — Fundamentals / Inventory</a>, '
         '<a href="/panel/c">Panel C — Positioning &amp; Flow</a>, '
         '<a href="/panel/d">Panel D — Volatility</a>, '
+        '<a href="/panel/macro">Macro-Context (TLT/VTI/QQQ)</a>, '
         'or <a href="/health">/health</a> for service status.</p>'
         "</body></html>"
     )
@@ -90,6 +91,16 @@ def panel_d_view(request: Request) -> HTMLResponse:
     ``iv_metrics``. A fresh/empty DB renders an honest empty state, not a 500."""
     view = panel_d.build_view(engine)
     return templates.TemplateResponse(request, "panel_d.html", {"view": view})
+
+
+@app.get("/panel/macro", response_class=HTMLResponse)
+def panel_macro_view(request: Request) -> HTMLResponse:
+    """Render the macro-context sub-panel (TLT/VTI/QQQ) server-side from a single
+    read-only pass over ``prices``. Context, not commodities — subordinate to
+    Panel A. A fresh/empty/pre-migration DB renders an honest empty/error state,
+    not a 500."""
+    view = panel_macro.build_view(engine)
+    return templates.TemplateResponse(request, "panel_macro.html", {"view": view})
 
 
 @app.get("/health")
