@@ -71,6 +71,8 @@
       "Bash(python3 -m venv:*)",
       "Bash(python3 -m pip:*)",
       "Bash(python -m pip:*)",
+      "Bash(python -:*)",
+      "Bash(python3 -:*)",
       "Bash(pip:*)",
       "Bash(pip3:*)",
       "Bash(/Users/albertwong/Documents/GitHub/CommodityDashboard/.venv/bin/python:*)",
@@ -79,6 +81,9 @@
       "Bash(/Users/albertwong/Documents/GitHub/CommodityDashboard/.venv/bin/alembic:*)",
       "Bash(rm -rf /tmp/:*)",
       "Bash(rm -rf /Users/albertwong/Documents/GitHub/CommodityDashboard/.venv:*)",
+      "Bash(rm -f dashboard/:*)",
+      "Bash(rm -f tests/:*)",
+      "Bash(rm -f /Users/albertwong/Documents/GitHub/CommodityDashboard/:*)",
       "Edit(//Users/albertwong/Documents/GitHub/CommodityDashboard/**)",
       "Write(//Users/albertwong/Documents/GitHub/CommodityDashboard/**)"
     ]
