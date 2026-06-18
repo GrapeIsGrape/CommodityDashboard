@@ -37,6 +37,9 @@ from dashboard.panels.panel_a import (
     level_change,
     nearest_prior,
     pct_change,
+    real_rate_trend_clause,
+    usd_trend_clause,
+    vix_band,
 )
 
 _DB_ENV = {
@@ -194,6 +197,139 @@ def test_format_date():
     assert format_date(None) == "—"
 
 
+# --- VIX regime band (pure) — explicit boundary handling ------------------
+
+def test_vix_band_calm_normal_stressed():
+    assert vix_band(10.0) == "calm"
+    assert vix_band(20.0) == "normal"
+    assert vix_band(30.0) == "stressed"
+
+
+def test_vix_band_boundaries_at_15_and_25():
+    # 15 and 25 themselves are normal (< 15 calm, > 25 stressed). Fix the side.
+    assert vix_band(14.99) == "calm"
+    assert vix_band(15.0) == "normal"
+    assert vix_band(25.0) == "normal"
+    assert vix_band(25.01) == "stressed"
+
+
+def test_vix_band_null_level_no_tag():
+    # NULL level → no band tag (distinct from "calm"); never infer from missing.
+    assert vix_band(None) is None
+
+
+def test_vix_band_carries_no_option_or_rank_language():
+    # The band labels themselves must not be option-action or rank vocabulary.
+    banned = ["sell", "buy", "rich", "candidate", "premium", "rank", "percentile", "short", "write"]
+    for level in (10.0, 20.0, 30.0):
+        label = vix_band(level)
+        for word in banned:
+            assert word not in label.lower()
+
+
+# --- Trend context clauses (pure) -----------------------------------------
+
+def test_usd_trend_clause_rising_is_headwind():
+    clause = usd_trend_clause(0.014)  # +1.4%.
+    assert clause is not None
+    assert "+1.4%" in clause
+    assert "headwind" in clause
+    assert "tailwind" not in clause
+
+
+def test_usd_trend_clause_softening_is_tailwind():
+    clause = usd_trend_clause(-0.012)
+    assert clause is not None
+    assert "tailwind" in clause
+
+
+def test_usd_trend_clause_no_prior_renders_no_clause():
+    assert usd_trend_clause(None) is None
+
+
+def test_real_rate_trend_clause_rising_is_precious_metals_headwind():
+    clause = real_rate_trend_clause(0.20)  # +0.20 pp.
+    assert clause is not None
+    assert "real yield" in clause
+    assert "precious metals" in clause
+    assert "headwind" in clause
+
+
+def test_real_rate_trend_clause_no_prior_renders_no_clause():
+    assert real_rate_trend_clause(None) is None
+
+
+def test_trend_clauses_have_no_option_action_language():
+    banned = ["sell", "buy", "rich", "candidate", "premium", "short", "write"]
+    for clause in (
+        usd_trend_clause(0.014),
+        usd_trend_clause(-0.012),
+        usd_trend_clause(0.0002),  # ~flat (deadband) variants too.
+        real_rate_trend_clause(0.20),
+        real_rate_trend_clause(-0.20),
+        real_rate_trend_clause(0.002),  # ~flat (deadband).
+    ):
+        for word in banned:
+            assert word not in clause.lower()
+
+
+# --- Trend-clause deadband (sub-rounding drift renders neutral, #16 UAT) ---
+
+def test_usd_trend_clause_subrounding_move_is_flat_not_headwind():
+    # 121.50 → 121.56 ⇒ +0.0005 fractional, which formats to "+0.0%". The gloss
+    # must NOT assert firming/headwind on a move that rounds to flat.
+    pct = (121.56 - 121.50) / 121.50  # ≈ 0.000494 < deadband 0.0005.
+    assert format_pct_change(pct) == "+0.0%"
+    clause = usd_trend_clause(pct)
+    assert clause is not None
+    assert "firming" not in clause
+    assert "headwind" not in clause
+    assert "tailwind" not in clause
+    assert "~flat" in clause
+
+
+def test_usd_trend_clause_supra_rounding_move_still_headwind():
+    # A move large enough to survive rounding STILL produces the directional
+    # gloss — don't over-suppress.
+    pct = 0.012  # +1.2%, well past the 0.05% deadband.
+    assert format_pct_change(pct) == "+1.2%"
+    clause = usd_trend_clause(pct)
+    assert "firming" in clause
+    assert "headwind" in clause
+
+
+def test_real_rate_trend_clause_subrounding_move_is_flat_not_headwind():
+    # DFII10 2.10 → 2.11 ⇒ +0.01 pp survives 2dp; but a +0.004 pp drift formats
+    # to "+0.00 pp" and must render ~flat, not rising/headwind.
+    change = 0.004  # < deadband 0.005 pp.
+    assert format_points(change, is_rate=True) == "+0.00 pp"
+    clause = real_rate_trend_clause(change)
+    assert clause is not None
+    assert "rising" not in clause
+    assert "headwind" not in clause
+    assert "falling" not in clause
+    assert "~flat" in clause
+
+
+def test_real_rate_trend_clause_supra_rounding_move_still_headwind():
+    # A +0.01 pp move (the original UAT example) survives 2dp rounding and the
+    # directional rising/headwind gloss must still fire — don't over-suppress.
+    change = 0.01
+    assert format_points(change, is_rate=True) == "+0.01 pp"
+    clause = real_rate_trend_clause(change)
+    assert "rising" in clause
+    assert "headwind" in clause
+
+
+def test_flat_trend_clauses_pass_banned_phrase_assertion():
+    # The neutral "~flat" strings must remain option-verb-free.
+    banned = ["sell", "buy", "rich", "candidate", "premium", "short", "write"]
+    for clause in (usd_trend_clause(0.0001), real_rate_trend_clause(0.001)):
+        assert "~flat" in clause
+        for word in banned:
+            assert word not in clause.lower()
+
+
 # --- Render path: fake engine (no live DB) --------------------------------
 
 class _FakeRow:
@@ -302,6 +438,97 @@ def test_daily_headlines_one_month_level_change_with_arrow():
     assert any("~3m change" in c for c, _ in dgs.secondary)
 
 
+def test_dtwexbgs_change_renders_as_percent_not_points():
+    today = dt.date(2026, 6, 17)
+    latest_date = dt.date(2026, 6, 16)
+    latest = [_row("DTWEXBGS", latest_date, 121.5)]
+    history = [
+        _row("DTWEXBGS", latest_date, 121.5),
+        _row("DTWEXBGS", latest_date - dt.timedelta(days=30), 119.8),  # ~1m prior.
+        _row("DTWEXBGS", latest_date - dt.timedelta(days=90), 119.0),  # ~3m prior.
+    ]
+    view = panel_a.build_view(_FakeEngine(latest, history), today=today)
+    usd = _find_row(view, "DTWEXBGS")
+    assert usd.group == GROUP_USD
+    # (121.5 - 119.8) / 119.8 = +1.42% → "+1.4%". A percent, not raw points.
+    assert usd.headline_label == "+1.4%"
+    assert "pp" not in usd.headline_label
+    assert usd.headline_arrow == "↑"
+    # The ~3m secondary is also a percent.
+    assert usd.secondary == [("~3m change", "+2.1%")]
+
+
+def test_rate_series_change_still_in_percentage_points():
+    # AC#2: DGS10/DFII10/T10YIE/UNRATE keep percentage-point rendering, not %.
+    today = dt.date(2026, 6, 17)
+    latest_date = dt.date(2026, 6, 16)
+    for sid in ("DGS10", "DFII10", "T10YIE"):
+        latest = [_row(sid, latest_date, 4.50)]
+        history = [
+            _row(sid, latest_date, 4.50),
+            _row(sid, latest_date - dt.timedelta(days=30), 4.30),
+        ]
+        view = panel_a.build_view(_FakeEngine(latest, history), today=today)
+        row = _find_row(view, sid)
+        assert row.headline_label == "+0.20 pp"
+        assert "%" not in row.headline_label
+
+
+def test_vix_row_carries_band_tag_from_level():
+    today = dt.date(2026, 6, 17)
+    latest_date = dt.date(2026, 6, 16)
+    latest = [_row("VIXCLS", latest_date, 30.0)]
+    history = [_row("VIXCLS", latest_date, 30.0)]
+    view = panel_a.build_view(_FakeEngine(latest, history), today=today)
+    vix = _find_row(view, "VIXCLS")
+    assert vix.band == "stressed"
+
+
+def test_vix_null_level_carries_no_band():
+    today = dt.date(2026, 6, 17)
+    latest_date = dt.date(2026, 6, 16)
+    latest = [_row("VIXCLS", latest_date, None)]
+    history = [_row("VIXCLS", latest_date, None)]
+    view = panel_a.build_view(_FakeEngine(latest, history), today=today)
+    vix = _find_row(view, "VIXCLS")
+    assert vix.band is None
+
+
+def test_usd_trend_clause_present_on_rising_usd():
+    today = dt.date(2026, 6, 17)
+    latest_date = dt.date(2026, 6, 16)
+    latest = [_row("DTWEXBGS", latest_date, 121.5)]
+    history = [
+        _row("DTWEXBGS", latest_date, 121.5),
+        _row("DTWEXBGS", latest_date - dt.timedelta(days=30), 119.8),
+    ]
+    view = panel_a.build_view(_FakeEngine(latest, history), today=today)
+    assert view.usd_clause is not None
+    assert "headwind" in view.usd_clause
+
+
+def test_real_rate_clause_present_on_rising_real_yield():
+    today = dt.date(2026, 6, 17)
+    latest_date = dt.date(2026, 6, 16)
+    latest = [_row("DFII10", latest_date, 2.20)]
+    history = [
+        _row("DFII10", latest_date, 2.20),
+        _row("DFII10", latest_date - dt.timedelta(days=30), 2.00),
+    ]
+    view = panel_a.build_view(_FakeEngine(latest, history), today=today)
+    assert view.real_rate_clause is not None
+    assert "precious metals" in view.real_rate_clause
+
+
+def test_no_clause_when_no_prior():
+    today = dt.date(2026, 6, 17)
+    latest_date = dt.date(2026, 6, 16)
+    latest = [_row("DTWEXBGS", latest_date, 121.5)]
+    history = [_row("DTWEXBGS", latest_date, 121.5)]  # no older row.
+    view = panel_a.build_view(_FakeEngine(latest, history), today=today)
+    assert view.usd_clause is None
+
+
 def test_quarterly_marked_quarterly():
     today = dt.date(2026, 6, 17)
     latest_date = dt.date(2026, 3, 31)
@@ -351,11 +578,17 @@ def test_no_option_action_language_in_any_row():
     for group in view.groups:
         for row in group.rows:
             blob = " ".join(
-                [row.label, row.headline_label, row.headline_caption]
+                [row.label, row.headline_label, row.headline_caption, row.band or ""]
                 + [v for _, v in row.secondary]
             ).lower()
             for word in banned:
                 assert word not in blob
+    # The new context clauses must also be option-action-free.
+    clause_blob = " ".join(
+        c for c in (view.usd_clause, view.real_rate_clause) if c
+    ).lower()
+    for word in banned:
+        assert word not in clause_blob
 
 
 def test_vix_carries_no_rank_or_percentile():
@@ -470,14 +703,18 @@ def test_panel_a_route_renders_buckets_and_caveats(monkeypatch):
         group=GROUP_RISK_REGIME, date=dt.date(2026, 6, 16), level=18.0, is_rate=False,
         stale=False, level_label="18.00", headline_label="-4.00",
         headline_caption="~1m change", headline_arrow="↓",
-        secondary=[("~3m change", "+1.00")],
+        secondary=[("~3m change", "+1.00")], band="normal",
     )
     groups = [
         panel_a.MacroGroup(GROUP_USD, "US Dollar", "x", [usd]),
         panel_a.MacroGroup(GROUP_INFLATION, "Realized Inflation", "x", [cpi]),
         panel_a.MacroGroup(GROUP_RISK_REGIME, "Risk Regime", "x", [vix]),
     ]
-    view = panel_a.PanelAView(groups=groups, last_session=dt.date(2026, 6, 16))
+    view = panel_a.PanelAView(
+        groups=groups, last_session=dt.date(2026, 6, 16),
+        usd_clause="Broad USD +1.4%/1m — firming → commodity headwind",
+        real_rate_clause="10y real yield +0.20 pp/1m — rising → headwind for precious metals",
+    )
     monkeypatch.setattr(dashboard_main.panel_a, "build_view", lambda *a, **k: view)
 
     with TestClient(dashboard_main.app) as client:
@@ -491,6 +728,9 @@ def test_panel_a_route_renders_buckets_and_caveats(monkeypatch):
     assert "Panel D" in body  # VIX footnote points to Panel D.
     assert "GVZ/OVX" in body
     assert "121.50" in body  # USD level rendered.
+    assert "normal regime" in body  # VIX band tag rendered.
+    assert "commodity headwind" in body  # USD trend clause rendered.
+    assert "headwind for precious metals" in body  # real-rate clause rendered.
     # No option-action language leaked into the page body.
     lowered = body.lower()
     for word in ["sell candidate", "premium rich", "buy ", "short puts", "short calls"]:

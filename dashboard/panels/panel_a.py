@@ -77,6 +77,64 @@ _RATE_LEVEL_IDS = frozenset({"DGS10", "DFII10", "T10YIE", "UNRATE"})
 # re-derives the "no rank" rule.
 _VIX_ID = "VIXCLS"
 
+# The broad trade-weighted USD index (DXY proxy). It is a daily series, but its
+# ~1m/~3m change reads more naturally as a *percent* of the index (a +1.70-pt
+# move off a ~121.5 base is +1.4%) than as raw index points — and a percent maps
+# cleanly onto the "commodity headwind/tailwind" gloss. It stays on the neutral
+# arrow + honest no-prior path; only the change *units* differ from the other
+# daily series, which keep percentage-point/level-point rendering.
+_USD_INDEX_ID = "DTWEXBGS"
+
+# VIX regime band cutoffs — a single named place (the same "one named place"
+# pattern as _RATE_LEVEL_IDS / _INFLATION_INDEX_IDS). These are *descriptive*
+# regime vocabulary, NOT a rich/cheap or tradeable threshold, and carry no
+# IV-rank/percentile (a hard #15 invariant for VIX). Boundary handling is fixed
+# here and asserted in tests: < 15 → calm, 15 ≤ level ≤ 25 → normal, > 25 →
+# stressed. A NULL level yields no band (never infer a regime from a missing
+# number).
+_VIX_CALM_BELOW = 15.0
+_VIX_STRESSED_ABOVE = 25.0
+_VIX_BAND_CALM = "calm"
+_VIX_BAND_NORMAL = "normal"
+_VIX_BAND_STRESSED = "stressed"
+
+# Commodity-linkage gloss strings for the trend context clauses. Descriptive
+# backdrop only — deliberately free of any buy/sell / "premium rich" /
+# "sell candidate" / "short" / "write" language (#15 AC#8). A firming USD is a
+# broad headwind for dollar-priced commodities; a rising 10y real yield raises
+# the carry cost of holding non-yielding metals, a precious-metals headwind.
+_USD_FIRMING_GLOSS = "firming → commodity headwind"
+_USD_SOFTENING_GLOSS = "softening → commodity tailwind"
+_REAL_RATE_RISING_GLOSS = "rising → headwind for precious metals"
+_REAL_RATE_FALLING_GLOSS = "falling → tailwind for precious metals"
+
+# The real-yield series the real-rate trend clause reads (DFII10 shown directly,
+# never recomputed as nominal − breakeven).
+_REAL_YIELD_ID = "DFII10"
+
+# Neutral "~flat" phrasing for a move too small to survive the displayed
+# rounding — descriptive backdrop, no directional commodity-impact claim, no
+# option-action language (so it still passes the banned-phrase assertion).
+_USD_FLAT_GLOSS = "~flat"
+_REAL_RATE_FLAT_GLOSS = "~flat"
+
+# Trend-clause deadbands (one named place, mirroring the _VIX_*/_RATE_LEVEL_IDS
+# constant-block pattern). The directional firming/softening (USD) and
+# rising/falling (real yield) gloss must fire ONLY when the change is large
+# enough to survive the rounding the headline itself uses — otherwise a
+# sub-rounding drift renders a confident regime narrative against a flat-looking
+# number (the Trader UAT bug). The thresholds are the smallest move that still
+# rounds to a non-zero headline:
+#   * USD change is fractional, shown via format_pct_change as ±0.0% (1 decimal
+#     percent) → a |fraction| < 0.0005 rounds to "+0.0%"/"-0.0%", so the
+#     deadband is 0.0005 (0.05%).
+#   * Real-yield change is in percentage points, shown via format_points
+#     (is_rate=True) as ±0.00 pp (2 decimals) → a |change| < 0.005 rounds to
+#     "+0.00 pp", so the deadband is 0.005 pp.
+# A move at/inside the band renders the neutral "~flat" clause instead.
+_USD_TREND_DEADBAND = 0.0005
+_REAL_RATE_TREND_DEADBAND = 0.005
+
 # Frequency-aware staleness for low-cadence FRED series. FRED dates every
 # observation by the reference-period START (May CPI is dated 2026-05-01, but is
 # only published ~June 11). So raw day-age is wrong: the freshest available
@@ -306,6 +364,74 @@ def format_date(value: Optional[dt.date]) -> str:
     return value.isoformat()
 
 
+# --- VIX regime band + trend context clauses (pure) -----------------------
+
+def vix_band(level: Optional[float]) -> Optional[str]:
+    """The descriptive VIX regime band for ``level`` — calm/normal/stressed —
+    using the cutoffs in the named constant block above.
+
+    Boundary handling is fixed here: ``< 15`` → calm, ``15 ≤ level ≤ 25`` →
+    normal, ``> 25`` → stressed (15 and 25 themselves are normal). A NULL level
+    yields ``None`` (no band) — never infer a regime from a missing number, and
+    "no band" is deliberately distinct from "calm". This is a plain level→regime
+    label, NOT an IV-rank/percentile (a hard #15 invariant for VIX).
+    """
+    if level is None:
+        return None
+    if level < _VIX_CALM_BELOW:
+        return _VIX_BAND_CALM
+    if level > _VIX_STRESSED_ABOVE:
+        return _VIX_BAND_STRESSED
+    return _VIX_BAND_NORMAL
+
+
+def usd_trend_clause(pct: Optional[float], window: str = "1m") -> Optional[str]:
+    """A one-line descriptive USD-trend context clause with a commodity-linkage
+    gloss, e.g. "Broad USD +1.4%/1m — firming → commodity headwind".
+
+    ``pct`` is the already-computed fractional change (off the same nearest-prior
+    row Panel A already selected). A NULL/no-prior change yields ``None`` (no
+    clause) rather than a fabricated direction. A move too small to survive the
+    headline's rounding (|pct| < ``_USD_TREND_DEADBAND``) renders the neutral
+    "~flat" gloss, never firming/softening — so a sub-rounding drift cannot read
+    as a regime signal. Context only — no option-action language.
+    """
+    if pct is None:
+        return None
+    move = format_pct_change(pct)
+    if pct > _USD_TREND_DEADBAND:
+        gloss = _USD_FIRMING_GLOSS
+    elif pct < -_USD_TREND_DEADBAND:
+        gloss = _USD_SOFTENING_GLOSS
+    else:
+        gloss = _USD_FLAT_GLOSS
+    return f"Broad USD {move}/{window} — {gloss}"
+
+
+def real_rate_trend_clause(change: Optional[float], window: str = "1m") -> Optional[str]:
+    """A one-line descriptive real-rate-trend context clause with a
+    precious-metals-linkage gloss, e.g.
+    "10y real yield +0.20 pp/1m — rising → headwind for precious metals".
+
+    ``change`` is the already-computed percentage-*point* level change in DFII10.
+    A NULL/no-prior change yields ``None`` (no clause). A move too small to
+    survive the headline's rounding (|change| < ``_REAL_RATE_TREND_DEADBAND``)
+    renders the neutral "~flat" gloss, never rising/falling — so a sub-rounding
+    drift cannot read as a precious-metals regime signal. Context only — no
+    option-action language.
+    """
+    if change is None:
+        return None
+    move = format_points(change, is_rate=True)
+    if change > _REAL_RATE_TREND_DEADBAND:
+        gloss = _REAL_RATE_RISING_GLOSS
+    elif change < -_REAL_RATE_TREND_DEADBAND:
+        gloss = _REAL_RATE_FALLING_GLOSS
+    else:
+        gloss = _REAL_RATE_FLAT_GLOSS
+    return f"10y real yield {move}/{window} — {gloss}"
+
+
 # --- View-model rows ------------------------------------------------------
 
 @dataclass
@@ -327,6 +453,13 @@ class MacroRow:
     headline_arrow: str = ""
     # Secondary change(s) — e.g. the daily ~3m, the monthly MoM, or the raw index.
     secondary: list[tuple[str, str]] = field(default_factory=list)
+    # VIX-only descriptive regime band (calm/normal/stressed); None elsewhere and
+    # on a NULL VIX level. A plain level→regime label, never an IV-rank.
+    band: Optional[str] = None
+    # Raw ~1m change carried for the trend-clause builder (the percent of change
+    # for the USD index, the percentage-point change for the real-yield series);
+    # None when there is no comparable prior. Not rendered directly.
+    one_month_change: Optional[float] = None
 
 
 @dataclass
@@ -342,6 +475,10 @@ class PanelAView:
     groups: list[MacroGroup]
     last_session: dt.date
     error: bool = False
+    # Descriptive context clauses (None → render nothing, never a fabricated
+    # direction): the broad-USD ~1m trend and the 10y-real-yield ~1m trend.
+    usd_clause: Optional[str] = None
+    real_rate_clause: Optional[str] = None
 
     @property
     def is_empty(self) -> bool:
@@ -431,7 +568,21 @@ def build_view(engine: Engine, today: Optional[dt.date] = None) -> PanelAView:
 
     rows = [_build_row(m, latest, history, today) for m in meta]
     groups = _group_rows(rows)
-    return PanelAView(groups=groups, last_session=last_session)
+
+    by_id = {row.series_id: row for row in rows}
+    usd_row = by_id.get(_USD_INDEX_ID)
+    real_row = by_id.get(_REAL_YIELD_ID)
+    usd_clause = usd_trend_clause(usd_row.one_month_change) if usd_row else None
+    real_rate_clause = (
+        real_rate_trend_clause(real_row.one_month_change) if real_row else None
+    )
+
+    return PanelAView(
+        groups=groups,
+        last_session=last_session,
+        usd_clause=usd_clause,
+        real_rate_clause=real_rate_clause,
+    )
 
 
 def _build_row(
@@ -482,7 +633,10 @@ def _fill_daily(
 ) -> None:
     """Daily series: ~1m headline level change + ~3m secondary, with a neutral
     arrow. VIX is a daily series but carries no rank (handled by omission — we
-    only ever compute a plain level change here)."""
+    only ever compute a plain level change here, then tag a descriptive regime
+    band). The broad-USD index (DTWEXBGS) renders its ~1m/~3m change as a
+    *percent* of the index, not raw index points; the rest of the daily path
+    keeps percentage-point / level-point rendering."""
     anchor = date if date is not None else (hist[0][0] if hist else None)
     one_m = None
     three_m = None
@@ -492,12 +646,25 @@ def _fill_daily(
         one_m = nearest_prior(hist, one_m_target)
         three_m = nearest_prior(hist, three_m_target)
 
-    one_change = level_change(level, one_m)
-    three_change = level_change(level, three_m)
-    row.headline_label = format_points(one_change, row.is_rate)
-    row.headline_caption = "~1m change"
-    row.headline_arrow = direction_arrow(one_change)
-    row.secondary = [("~3m change", format_points(three_change, row.is_rate))]
+    if row.series_id == _USD_INDEX_ID:
+        one_pct = pct_change(level, one_m)
+        three_pct = pct_change(level, three_m)
+        row.headline_label = format_pct_change(one_pct)
+        row.headline_caption = "~1m change"
+        row.headline_arrow = direction_arrow(one_pct)
+        row.secondary = [("~3m change", format_pct_change(three_pct))]
+        row.one_month_change = one_pct
+    else:
+        one_change = level_change(level, one_m)
+        three_change = level_change(level, three_m)
+        row.headline_label = format_points(one_change, row.is_rate)
+        row.headline_caption = "~1m change"
+        row.headline_arrow = direction_arrow(one_change)
+        row.secondary = [("~3m change", format_points(three_change, row.is_rate))]
+        row.one_month_change = one_change
+
+    if row.series_id == _VIX_ID:
+        row.band = vix_band(level)
 
 
 def _fill_monthly(
