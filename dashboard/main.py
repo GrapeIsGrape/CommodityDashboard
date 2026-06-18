@@ -3,10 +3,11 @@
 Serves a boot page (``/``), a ``/health`` check that confirms the service is up
 and can reach Postgres (and reports the current Alembic ``schema_version``), and
 the Phase 4 server-rendered panels. Panel A (Macro / Cross-Asset, ``/panel/a``,
-reads ``macro_metrics``), Panel C (Positioning & Flow, ``/panel/c``, reads
-``cot`` + ``curve_shape``) and Panel D (Volatility, ``/panel/d``, reads
-``iv_metrics``) render via Jinja2 read-only — no SPA, no client-side fetch. The
-DB is never written from a request handler.
+reads ``macro_metrics``), Panel B (Fundamentals / Inventory, ``/panel/b``, reads
+``inventories``), Panel C (Positioning & Flow, ``/panel/c``, reads ``cot`` +
+``curve_shape``) and Panel D (Volatility, ``/panel/d``, reads ``iv_metrics``)
+render via Jinja2 read-only — no SPA, no client-side fetch. The DB is never
+written from a request handler.
 """
 
 import logging
@@ -19,7 +20,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError
 
 from common.config import get_database_url
-from dashboard.panels import panel_a, panel_c, panel_d
+from dashboard.panels import panel_a, panel_b, panel_c, panel_d
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("dashboard")
@@ -44,6 +45,7 @@ def index() -> str:
         "<body><h1>CommodityDashboard is alive</h1>"
         "<p>Phase 4 in progress. See "
         '<a href="/panel/a">Panel A — Macro / Cross-Asset</a>, '
+        '<a href="/panel/b">Panel B — Fundamentals / Inventory</a>, '
         '<a href="/panel/c">Panel C — Positioning &amp; Flow</a>, '
         '<a href="/panel/d">Panel D — Volatility</a>, '
         'or <a href="/health">/health</a> for service status.</p>'
@@ -58,6 +60,15 @@ def panel_a_view(request: Request) -> HTMLResponse:
     empty/error state, not a 500."""
     view = panel_a.build_view(engine)
     return templates.TemplateResponse(request, "panel_a.html", {"view": view})
+
+
+@app.get("/panel/b", response_class=HTMLResponse)
+def panel_b_view(request: Request) -> HTMLResponse:
+    """Render Panel B (Fundamentals / Inventory) server-side from a single
+    read-only pass over ``inventories``. A fresh/empty/pre-migration DB renders an
+    honest empty/error state, not a 500."""
+    view = panel_b.build_view(engine)
+    return templates.TemplateResponse(request, "panel_b.html", {"view": view})
 
 
 @app.get("/panel/c", response_class=HTMLResponse)
