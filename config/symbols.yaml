@@ -53,10 +53,27 @@ commodities:
     - { future: HE, name: Lean Hogs,     iv_proxy: null }
 
 # Macro-context tickers — context only, NOT commodities (README §4 sub-panel).
+# The prices ETL (etl/sources/prices.py) ingests these into the `prices` table
+# (one row per trading day per symbol), storing raw close + total-return-adjusted
+# close + OHLCV. `symbol` is both the yfinance ticker and prices.symbol.
 macro_context:
   - { symbol: TLT, name: 20+ Year Treasury Bond ETF }
   - { symbol: VTI, name: Total US Stock Market ETF }
   - { symbol: QQQ, name: Nasdaq-100 ETF }
+
+# Daily price-series ETL config (etl/sources/prices.py → `prices`).
+# Mirrors the volatility_indices.defaults backfill-config convention — never a
+# magic number in code.
+prices:
+  defaults:
+    # First run backfills this many calendar days of daily bars (~5 years) so the
+    # trend chart has context immediately.
+    backfill_days: 1825
+    # Every run re-fetches this trailing window (~400 days) and upserts, so the
+    # back-adjusted `adj_close` stays internally consistent after each
+    # distribution / split. Later runs start at max(stored date) - refetch_days,
+    # NOT just max(date), so the lookback re-touches recent rows.
+    refetch_days: 400
 
 # Published volatility indices (Panel D). yfinance tickers.
 #

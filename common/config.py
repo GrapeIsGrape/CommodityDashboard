@@ -55,6 +55,28 @@ def load_curve_config(path: str | os.PathLike | None = None) -> dict:
     return load_symbols(path).get("curve", {})
 
 
+def load_macro_context(path: str | os.PathLike | None = None) -> list:
+    """Load the macro-context tickers (TLT/VTI/QQQ) from the ``macro_context``
+    block of config/symbols.yaml — each entry is ``{symbol, name}``. Returns
+    ``[]`` if the block is absent.
+
+    Reuses the symbols config (no separate file), overridable via SYMBOLS_CONFIG
+    or the ``path`` arg, consistent with :func:`load_symbols`.
+    """
+    return load_symbols(path).get("macro_context", [])
+
+
+def load_prices_config(path: str | os.PathLike | None = None) -> dict:
+    """Load the daily prices-ETL config (the ``prices`` block of
+    config/symbols.yaml): backfill / re-fetch-window defaults. Returns ``{}`` if
+    the block is absent.
+
+    Reuses the symbols config (no separate file), overridable via SYMBOLS_CONFIG
+    or the ``path`` arg, consistent with :func:`load_symbols`.
+    """
+    return load_symbols(path).get("prices", {})
+
+
 def load_fred_series(path: str | os.PathLike | None = None) -> dict:
     """Load the FRED macro series config from config/fred_series.yaml.
 
