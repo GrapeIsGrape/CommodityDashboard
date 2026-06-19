@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_panel.html" import panel %}
+{% block title %}Sentiment &middot; CommodityDashboard{% endblock %}
+
+{% block style %}
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; margin-bottom: 24px; }
+  .panel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  .panel-title { margin: 0; font-size: 16px; }
+  .panel-sub { color: var(--muted); font-size: 12px; }
+  /* The expected EMPTY state — neutral, clearly "awaiting", NOT an error. */
+  .placeholder { color: var(--muted); padding: 24px 0; line-height: 1.6; }
+  .placeholder strong { color: var(--fg); }
+  /* The UNAVAILABLE state — visually distinct from EMPTY (warning-toned). */
+  .unavailable { color: var(--stale-fg); background: var(--stale); border-radius: 6px; padding: 16px 18px; line-height: 1.6; }
+  .article { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .article-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .headline { font-size: 14px; font-weight: 600; }
+  .ts { color: var(--muted); font-size: 12px; }
+  .ts-source { color: var(--muted); font-size: 11px; font-style: italic; }
+  .url { font-size: 12px; word-break: break-all; }
+  table.scores { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  table.scores th, table.scores td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.scores thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.score { text-align: right; white-space: nowrap; }
+  .reasoning { color: var(--fg); font-size: 13px; }
+  .no-scores { color: var(--muted); font-size: 12px; font-style: italic; margin-top: 6px; }
+  .footnotes { color: var(--muted); font-size: 11px; margin-top: 14px; line-height: 1.6; }
+  .footnotes li { margin-bottom: 2px; }
+{% endblock %}
+
+{% block content %}
+{% call panel("Sentiment (news / LLM)", "placeholder — populated by a separate Writer-2 project (not built here)") %}
+
+  {% if view.is_unavailable %}
+    <div class="unavailable">
+      Sentiment data is currently <strong>unavailable</strong>. The database could not be reached, or the
+      <code>sentiment_*</code> tables are not yet migrated — this is a service/DB condition, not the normal empty state. Retry shortly.
+    </div>
+  {% elif view.is_empty %}
+    <div class="placeholder">
+      <strong>Awaiting Writer-2 — no sentiment data yet.</strong><br>
+      The <code>sentiment_articles</code> / <code>sentiment_scores</code> tables exist but are empty. Sentiment is produced by a
+      <strong>separate, not-yet-built project</strong> (a scheduled LLM news-sentiment task — CLAUDE.md §1, "1 DB, 2 writers"):
+      this dashboard only reserves the room and renders whatever that writer eventually stores. No rows are fabricated here.
+    </div>
+  {% else %}
+
+  {% for article in view.articles %}
+  <div class="article">
+    <div class="article-head">
+      <span class="headline">{{ article.headline }}</span>
+      <span class="ts">{{ article.timestamp }}</span>
+      {% if article.timestamp_source != "published" %}<span class="ts-source">({{ article.timestamp_source }})</span>{% endif %}
+    </div>
+    <div class="url">{% if article.href %}<a href="{{ article.href }}" rel="noopener noreferrer">{{ article.url }}</a>{% else %}{{ article.url }}{% endif %}</div>
+
+    {% if article.has_scores %}
+    <table class="scores">
+      <thead>
+        <tr>
+          <th>commodity</th>
+          <th class="score">score</th>
+          <th>reasoning</th>
+          <th>model</th>
+          <th>scored</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in article.scores %}
+        <tr>
+          <td>{{ s.commodity }}</td>
+          <td class="score">{{ s.score }}</td>
+          <td class="reasoning">{{ s.reasoning }}</td>
+          <td>{{ s.model }}</td>
+          <td>{{ s.scored_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="no-scores">Not yet scored.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <ul class="footnotes">
+    <li>Sentiment is written by a <strong>separate Writer-2 project</strong>; this panel is read-only and renders defensively against whatever that writer stores. NULL <code>score</code> shows as <code>—</code> (distinct from a real neutral <code>0</code>).</li>
+    <li>Each article surfaces the model's <strong>reasoning</strong>, not just the score (CLAUDE.md §5). Timestamps fall back <code>published</code> &rarr; <code>fetched</code> &rarr; <code>created</code>.</li>
+  </ul>
+
+  {% endif %}
+{% endcall %}
+{% endblock %}

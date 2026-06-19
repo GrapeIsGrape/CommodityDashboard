@@ -6,8 +6,11 @@ the Phase 4 server-rendered panels. Panel A (Macro / Cross-Asset, ``/panel/a``,
 reads ``macro_metrics``), Panel B (Fundamentals / Inventory, ``/panel/b``, reads
 ``inventories``), Panel C (Positioning & Flow, ``/panel/c``, reads ``cot`` +
 ``curve_shape``) and Panel D (Volatility, ``/panel/d``, reads ``iv_metrics``)
-render via Jinja2 read-only — no SPA, no client-side fetch. The DB is never
-written from a request handler.
+render via Jinja2 read-only — no SPA, no client-side fetch. The macro-context
+sub-panel (``/panel/macro``, reads ``prices``) and the sentiment placeholder
+panel (``/panel/sentiment``, reads ``sentiment_articles`` + ``sentiment_scores``,
+empty until a separate Writer-2 project populates them) render likewise. The DB
+is never written from a request handler.
 """
 
 import logging
@@ -20,7 +23,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import ProgrammingError
 
 from common.config import get_database_url
-from dashboard.panels import panel_a, panel_b, panel_c, panel_d, panel_macro
+from dashboard.panels import panel_a, panel_b, panel_c, panel_d, panel_macro, panel_sentiment
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("dashboard")
@@ -49,6 +52,7 @@ def index() -> str:
         '<a href="/panel/c">Panel C — Positioning &amp; Flow</a>, '
         '<a href="/panel/d">Panel D — Volatility</a>, '
         '<a href="/panel/macro">Macro-Context (TLT/VTI/QQQ)</a>, '
+        '<a href="/panel/sentiment">Sentiment (placeholder)</a>, '
         'or <a href="/health">/health</a> for service status.</p>'
         "</body></html>"
     )
@@ -101,6 +105,17 @@ def panel_macro_view(request: Request) -> HTMLResponse:
     not a 500."""
     view = panel_macro.build_view(engine)
     return templates.TemplateResponse(request, "panel_macro.html", {"view": view})
+
+
+@app.get("/panel/sentiment", response_class=HTMLResponse)
+def panel_sentiment_view(request: Request) -> HTMLResponse:
+    """Render the sentiment placeholder panel server-side from a single read-only
+    pass over ``sentiment_articles`` + ``sentiment_scores``. In v1 these tables
+    are empty (populated later by a separate Writer-2 project), so the dominant
+    path is an honest "awaiting Writer-2" empty state — distinct from the
+    pre-migration/DB-down unavailable state. Never a 500."""
+    view = panel_sentiment.build_view(engine)
+    return templates.TemplateResponse(request, "panel_sentiment.html", {"view": view})
 
 
 @app.get("/health")
