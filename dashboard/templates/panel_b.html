@@ -31,6 +31,11 @@
   .verdict-loose { color: #8fd0ff; }
   .translation { color: var(--muted); font-size: 11px; }
   .stale-badge { background: var(--stale); color: var(--stale-fg); font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  /* Cushing capacity context — neutral CONTEXT, not a colored good/bad signal. */
+  .capacity-pct { color: var(--muted); font-size: 11px; display: block; }
+  .cushing-badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; display: inline-block; margin-top: 2px; }
+  .cushing-near-bottom { background: #3a2326; color: #ffb199; border: 1px solid #ffb199; }
+  .cushing-low { color: #ffe8a3; border: 1px solid var(--line); }
   .cadence-tag { color: var(--muted); font-size: 11px; }
   .flow-tag { color: #ffe8a3; font-size: 11px; border: 1px solid var(--line); padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
   .caveat { color: #5aa9ff; font-size: 12px; margin-bottom: 12px; }
@@ -87,7 +92,12 @@
               <span class="{{ 'no-prior' if '(no prior)' in row.headline_label }}">{{ row.headline_label }}</span>
               <span class="caption">{{ row.headline_caption }}</span>
             </td>
-            <td>{{ row.level_label }}</td>
+            <td>
+              {{ row.level_label }}
+              {% if row.capacity_pct_label %}<span class="capacity-pct">{{ row.capacity_pct_label }}</span>{% endif %}
+              {% if row.cushing_band == 'near_bottom' %}<span class="cushing-badge cushing-near-bottom">{{ row.cushing_band_label }}</span>
+              {% elif row.cushing_band == 'low' %}<span class="cushing-badge cushing-low">{{ row.cushing_band_label }}</span>{% endif %}
+            </td>
             <td class="secondary">
               {% for cap, val in row.secondary %}{{ cap }} {{ val }}{% if not loop.last %} · {% endif %}{% endfor %}
             </td>
@@ -110,6 +120,7 @@
     <li>The own-history percentile is each series vs its <strong>own same-period stored history — not seasonally adjusted, NOT the EIA 5-yr band</strong>; below the accrual minimum it shows <em>— (accruing M/N)</em> with no verdict.</li>
     <li><strong>Grain coverage is thin</strong>: 3 annual production + 3 quarterly stocks only. WASDE balance sheet and weekly Crop Progress/Condition are deferred — there is no stocks-to-use here and grain fundamentals are NOT fully covered.</li>
     <li>Staleness is cadence-bucketed: weekly EIA is release-aware (petroleum Wed / nat-gas Thu, +1 day after a Monday holiday); quarterly/annual USDA are "stale by design" between reports and are not flagged red.</li>
+    <li><strong>Cushing only</strong> carries a "% of operable shell capacity" and a near-tank-bottom badge — it is the WTI/CL physical delivery point, the one tank where the absolute level signals a squeeze/backwardation setup. Operable shell (~76M bbl) and the tank-bottom region (~20M bbl) are last-known config constants (EIA publishes them separately, semi-annually); no other tank gets this. With no configured capacity the figure is simply omitted.</li>
     <li>Inventory tension is fundamentals <strong>context</strong> (tight → upside tail/move risk → vol bid). The decision lives in <a href="/panel/d">Panel D</a> (volatility).</li>
   </ul>
 

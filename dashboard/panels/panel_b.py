@@ -87,6 +87,20 @@ _EIA_FLOW_SERIES_IDS = frozenset({"PET.WCRFPUS2.W", "PET.WRPUPUS2.W"})
 # not build/draw. One named place.
 _NATGAS_SERIES_IDS = frozenset({"NG.NW2_EPG0_SWO_R48_BCF.W"})
 
+# Cushing crude (the WTI/CL physical delivery point) — the ONE inventory series
+# where the ABSOLUTE level carries direct squeeze/backwardation information vs
+# operable shell capacity, so it (and only it) gets the capacity-context render
+# (#19). Scoped here; every other tank stays change-only. Capacity thresholds are
+# config-driven (the per-entry ``capacity:`` block in config/eia_series.yaml),
+# NEVER hardcoded here — this is only the series-id scope guard.
+_CUSHING_SERIES_ID = "PET.W_EPC0_SAX_YCUOK_MBBL.W"
+
+# Near-bottom band vocabulary (pure function of level vs the config capacity).
+CUSHING_BAND_NEAR_BOTTOM = "near_bottom"  # at/below the operational tank-bottom region.
+CUSHING_BAND_LOW = "low"  # graded watch: above tank_bottom but below low_band.
+CUSHING_BAND_NORMAL = "normal"  # comfortably above the floor.
+CUSHING_BAND_NONE = ""  # no capacity config / no level → no badge (honest NULL).
+
 # Position-in-own-history minimums (a single source of truth, never re-hardcoded
 # — the Panel C cold-start pattern). Below the threshold we render
 # "— (accruing M/N)" with NO tight/loose verdict, only raw level + change.
@@ -414,6 +428,63 @@ def build_change_arrow(change: Optional[float]) -> str:
     return "→"
 
 
+# --- Cushing capacity context (pure, DB-free; Cushing-only) ----------------
+
+def capacity_pct(level: Optional[float], operable_shell: Optional[float]) -> Optional[float]:
+    """Cushing level as a fraction of operable shell capacity (0.29 == 29%).
+
+    Honest NULL (flag-not-fake): a missing level OR a missing/non-positive
+    operable-shell capacity → None. We NEVER invent a % against an unknown or
+    nonsensical capacity; the caller then shows no % figure at all.
+    """
+    if level is None or operable_shell is None or operable_shell <= 0:
+        return None
+    return level / operable_shell
+
+
+def cushing_band(level: Optional[float], capacity: Optional[dict]) -> str:
+    """Classify a Cushing level into a near-bottom band — a pure function of
+    ``(level, capacity_config)``.
+
+    * No capacity config, no ``tank_bottom``, or a NULL level → ``CUSHING_BAND_NONE``
+      (no badge — honest NULL, never a fabricated proximity read).
+    * level ≤ ``tank_bottom``                → ``CUSHING_BAND_NEAR_BOTTOM`` (loud).
+    * ``tank_bottom`` < level ≤ ``low_band`` → ``CUSHING_BAND_LOW`` (graded watch;
+      only when ``low_band`` is configured).
+    * otherwise                             → ``CUSHING_BAND_NORMAL``.
+    """
+    if not capacity or level is None:
+        return CUSHING_BAND_NONE
+    tank_bottom = capacity.get("tank_bottom")
+    if tank_bottom is None:
+        return CUSHING_BAND_NONE
+    if level <= tank_bottom:
+        return CUSHING_BAND_NEAR_BOTTOM
+    low_band = capacity.get("low_band")
+    if low_band is not None and level <= low_band:
+        return CUSHING_BAND_LOW
+    return CUSHING_BAND_NORMAL
+
+
+def cushing_band_label(band: str) -> str:
+    """A neutral CONTEXT badge label for a Cushing band — the squeeze read framed
+    as physical-delivery tightness → backwardation pressure → vol-bid CONTEXT (the
+    decision lives in Panel D). NO option-action / sell-instruction language."""
+    if band == CUSHING_BAND_NEAR_BOTTOM:
+        return "NEAR TANK BOTTOM — delivery-point tight → backwardation/squeeze pressure → vol-bid context"
+    if band == CUSHING_BAND_LOW:
+        return "LOW — approaching tank bottom → delivery-point tightening → vol-bid context"
+    return ""
+
+
+def format_capacity_pct(pct: Optional[float]) -> str:
+    """Render the Cushing capacity fraction as "NN% of operable shell capacity",
+    or ``—`` when unknown (distinct from a real 0%)."""
+    if pct is None:
+        return "—"
+    return f"{pct * 100:,.0f}% of operable shell capacity"
+
+
 # --- View-model rows ------------------------------------------------------
 
 @dataclass
@@ -443,6 +514,11 @@ class InventoryRow:
     verdict: str = VERDICT_NONE
     translation: str = ""
     history_obs: int = 0
+
+    # Cushing-only capacity context (#19); empty/none on every other series.
+    capacity_pct_label: str = ""  # "" → no figure rendered (no capacity config).
+    cushing_band: str = CUSHING_BAND_NONE
+    cushing_band_label: str = ""
 
 
 @dataclass
@@ -515,6 +591,9 @@ def _series_meta() -> list[dict]:
                 "cadence": CADENCE_WEEKLY,
                 "group": group,
                 "is_flow": is_flow,
+                # Optional per-series capacity context (Cushing only today). A
+                # missing block → None → no %/badge (honest NULL).
+                "capacity": entry.get("capacity"),
             }
         )
 
@@ -635,7 +714,30 @@ def _build_row(
     elif kind == KIND_GRAIN_PRODUCTION:
         _fill_grain_production(row, level, date, hist)
 
+    # Cushing-only capacity context (#19): attached strictly to the delivery-point
+    # series, and only when its capacity block is configured (else honest NULL).
+    if series_id == _CUSHING_SERIES_ID:
+        _fill_cushing_capacity(row, level, meta.get("capacity"))
+
     return row
+
+
+def _fill_cushing_capacity(
+    row: InventoryRow, level: Optional[float], capacity: Optional[dict]
+) -> None:
+    """Attach the Cushing capacity-context render: a "% of operable shell capacity"
+    secondary figure + a near-bottom band badge, both pure functions of
+    ``(level, capacity_config)``. With no capacity config the row keeps its default
+    empty fields — no %, no badge, no fabricated number (AC#3 honest NULL)."""
+    if not capacity:
+        return
+    pct = capacity_pct(level, capacity.get("operable_shell"))
+    # Only surface a % figure when a real percentage exists; an unknown/non-positive
+    # capacity yields None → "" so nothing fabricated is shown.
+    row.capacity_pct_label = format_capacity_pct(pct) if pct is not None else ""
+    band = cushing_band(level, capacity)
+    row.cushing_band = band
+    row.cushing_band_label = cushing_band_label(band)
 
 
 def _nearest(

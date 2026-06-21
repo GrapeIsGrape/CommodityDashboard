@@ -26,6 +26,28 @@
 # Flagged / excluded:
 #   Metals warehouse stocks (LME/COMEX) are NOT on the EIA API — they need a
 #     paid feed or scraping and are deferred, not faked here.
+#
+# capacity (Cushing only):
+#   An optional per-series capacity-context block. Today it is set ONLY on the
+#   Cushing crude entry (PET.W_EPC0_SAX_YCUOK_MBBL.W), the WTI/CL physical
+#   delivery point, where the ABSOLUTE level carries direct squeeze/backwardation
+#   information vs operable shell capacity. Panel B renders a "% of operable shell
+#   capacity" secondary figure + a near-bottom badge from it (#19). No other tank
+#   gets this — they lack a clean single operable-capacity figure, and we do NOT
+#   fake one. If a series has no capacity block, Panel B renders the normal
+#   change-first view with NO % and NO badge (honest NULL, never an invented %).
+#
+#   These are LAST-KNOWN static constants (EIA publishes operable shell capacity
+#   separately, semi-annually, and it moves slowly). A capacity-as-ETL-series is a
+#   deferred flag-not-fake follow-up — update these by hand when EIA revises them.
+#   Units match the series unit (Thousand Barrels).
+#     operable_shell    - working-storage operable shell capacity = the 100% mark.
+#     tank_bottom       - operational tank-bottom region; at/below this is the
+#                         loud near-bottom (squeeze-setup) badge.
+#     low_band          - graded "low / approaching tank bottom" threshold above
+#                         tank_bottom; between tank_bottom and this is a softer
+#                         near-bottom-watch badge. Optional; omit to disable the
+#                         graded band (only the at/below-tank_bottom badge shows).
 
 defaults:
   observation_start: "2005-01-01"
@@ -34,7 +56,14 @@ defaults:
 series:
   # Crude oil stocks
   - { id: PET.WCESTUS1.W,                label: "US Crude Oil Stocks excl SPR",        unit: "Thousand Barrels", panel: B }
-  - { id: PET.W_EPC0_SAX_YCUOK_MBBL.W,   label: "Cushing OK Crude Oil Stocks excl SPR", unit: "Thousand Barrels", panel: B }
+  - id: PET.W_EPC0_SAX_YCUOK_MBBL.W
+    label: "Cushing OK Crude Oil Stocks excl SPR"
+    unit: "Thousand Barrels"
+    panel: B
+    capacity:
+      operable_shell: 76000   # ~76M bbl operable shell (last-known; EIA semi-annual).
+      tank_bottom: 20000      # ~20M bbl operational tank-bottom region.
+      low_band: 30000         # graded "approaching tank bottom" watch above the floor.
 
   # Refined product stocks
   - { id: PET.WGTSTUS1.W,                label: "US Total Gasoline Stocks",            unit: "Thousand Barrels", panel: B }

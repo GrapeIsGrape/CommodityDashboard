@@ -35,10 +35,19 @@ from dashboard.panels.panel_b import (
     VERDICT_LOOSE,
     VERDICT_NONE,
     VERDICT_TIGHT,
+    CUSHING_BAND_LOW,
+    CUSHING_BAND_NEAR_BOTTOM,
+    CUSHING_BAND_NONE,
+    CUSHING_BAND_NORMAL,
+    _CUSHING_SERIES_ID,
     _EIA_NATGAS_RELEASE_WEEKDAY,
     _EIA_PETROLEUM_RELEASE_WEEKDAY,
+    capacity_pct,
     classify_verdict,
+    cushing_band,
+    cushing_band_label,
     directional_translation,
+    format_capacity_pct,
     format_date,
     format_level,
     format_signed,
@@ -197,6 +206,71 @@ def test_format_signed_pct_yoy():
 def test_format_date():
     assert format_date(dt.date(2026, 6, 12)) == "2026-06-12"
     assert format_date(None) == "—"
+
+
+# --- Cushing capacity context (pure, DB-free; #19) -------------------------
+
+_CUSHING_CAPACITY = {"operable_shell": 76000, "tank_bottom": 20000, "low_band": 30000}
+
+
+def test_capacity_pct_basic_fraction():
+    # 22,000 / 76,000 ≈ 0.2895.
+    assert capacity_pct(22000.0, 76000) == pytest.approx(22000.0 / 76000)
+
+
+def test_capacity_pct_honest_null_no_capacity_or_bad_capacity():
+    # Missing level, missing capacity, or a non-positive capacity → None (never a
+    # fabricated %): AC#3 honest NULL.
+    assert capacity_pct(None, 76000) is None
+    assert capacity_pct(22000.0, None) is None
+    assert capacity_pct(22000.0, 0) is None
+    assert capacity_pct(22000.0, -5) is None
+
+
+def test_cushing_band_membership_pure():
+    # At/below tank_bottom → near-bottom (loud).
+    assert cushing_band(20000.0, _CUSHING_CAPACITY) == CUSHING_BAND_NEAR_BOTTOM
+    assert cushing_band(15000.0, _CUSHING_CAPACITY) == CUSHING_BAND_NEAR_BOTTOM
+    # Between tank_bottom and low_band → graded low watch.
+    assert cushing_band(25000.0, _CUSHING_CAPACITY) == CUSHING_BAND_LOW
+    assert cushing_band(30000.0, _CUSHING_CAPACITY) == CUSHING_BAND_LOW
+    # Comfortably above → normal (no badge).
+    assert cushing_band(50000.0, _CUSHING_CAPACITY) == CUSHING_BAND_NORMAL
+
+
+def test_cushing_band_honest_null_without_config_or_level():
+    # No capacity config / no tank_bottom / NULL level → no band (honest NULL).
+    assert cushing_band(15000.0, None) == CUSHING_BAND_NONE
+    assert cushing_band(15000.0, {}) == CUSHING_BAND_NONE
+    assert cushing_band(15000.0, {"operable_shell": 76000}) == CUSHING_BAND_NONE
+    assert cushing_band(None, _CUSHING_CAPACITY) == CUSHING_BAND_NONE
+
+
+def test_cushing_band_graded_disabled_when_no_low_band():
+    # Without a low_band only the at/below-tank_bottom badge exists; a mid level is
+    # normal (no graded watch).
+    cap = {"operable_shell": 76000, "tank_bottom": 20000}
+    assert cushing_band(25000.0, cap) == CUSHING_BAND_NORMAL
+    assert cushing_band(18000.0, cap) == CUSHING_BAND_NEAR_BOTTOM
+
+
+def test_format_capacity_pct_labeled_and_null():
+    out = format_capacity_pct(0.29)
+    assert out == "29% of operable shell capacity"
+    assert "$" not in out
+    # NULL → em dash, distinct from a real 0%.
+    assert format_capacity_pct(None) == "—"
+    assert format_capacity_pct(0.0) == "0% of operable shell capacity"
+
+
+def test_cushing_band_label_is_neutral_context_no_option_action():
+    banned = ["sell", "buy", "rich", "candidate", "premium", "short", "write"]
+    for band in (CUSHING_BAND_NEAR_BOTTOM, CUSHING_BAND_LOW):
+        label = cushing_band_label(band).lower()
+        assert "context" in label  # neutral CONTEXT framing.
+        for word in banned:
+            assert word not in label
+    assert cushing_band_label(CUSHING_BAND_NORMAL) == ""
 
 
 # --- Cadence-bucketed staleness (clock-injected today) ---------------------
@@ -460,6 +534,81 @@ def test_grain_production_is_backward_looking_yoy(monkeypatch):
     assert row.verdict == VERDICT_NONE  # no tension verdict on production.
 
 
+def test_cushing_row_renders_capacity_context_near_bottom(monkeypatch):
+    # AC#1/#4: the Cushing series gets a "% of operable shell capacity" figure and
+    # a near-bottom badge when the level is at/below the configured tank bottom.
+    today = dt.date(2026, 6, 17)
+    we = dt.date(2026, 6, 12)
+    latest = [_lrow(_CUSHING_SERIES_ID, we, 18000.0, "Thousand Barrels", "EIA")]
+    history = [_hrow(_CUSHING_SERIES_ID, we, 18000.0)]
+    view = panel_b.build_view(_FakeEngine(latest, history), today=today)
+    row = _find_row(view, _CUSHING_SERIES_ID)
+    assert row.cushing_band == CUSHING_BAND_NEAR_BOTTOM
+    assert "operable shell capacity" in row.capacity_pct_label
+    assert "context" in row.cushing_band_label.lower()
+    # 18,000 / 76,000 ≈ 24%.
+    assert row.capacity_pct_label == "24% of operable shell capacity"
+
+
+def test_cushing_row_normal_level_no_badge_but_has_pct(monkeypatch):
+    today = dt.date(2026, 6, 17)
+    we = dt.date(2026, 6, 12)
+    latest = [_lrow(_CUSHING_SERIES_ID, we, 50000.0, "Thousand Barrels", "EIA")]
+    view = panel_b.build_view(_FakeEngine(latest, []), today=today)
+    row = _find_row(view, _CUSHING_SERIES_ID)
+    assert row.cushing_band == CUSHING_BAND_NORMAL
+    assert row.cushing_band_label == ""  # no badge text when normal.
+    assert "operable shell capacity" in row.capacity_pct_label  # % still shown.
+
+
+def test_capacity_context_is_cushing_only(monkeypatch):
+    # AC#1: the capacity context attaches ONLY to the Cushing series — no other
+    # inventory series gets a %/badge.
+    today = dt.date(2026, 6, 17)
+    we = dt.date(2026, 6, 12)
+    latest = [
+        _lrow("PET.WCESTUS1.W", we, 421000.0, "Thousand Barrels", "EIA"),
+        _lrow(_CUSHING_SERIES_ID, we, 18000.0, "Thousand Barrels", "EIA"),
+        _lrow("PET.WGTSTUS1.W", we, 230000.0, "Thousand Barrels", "EIA"),
+    ]
+    view = panel_b.build_view(_FakeEngine(latest, []), today=today)
+    for sid in ("PET.WCESTUS1.W", "PET.WGTSTUS1.W"):
+        other = _find_row(view, sid)
+        assert other.capacity_pct_label == ""
+        assert other.cushing_band == CUSHING_BAND_NONE
+        assert other.cushing_band_label == ""
+    cushing = _find_row(view, _CUSHING_SERIES_ID)
+    assert cushing.capacity_pct_label != ""
+    assert cushing.cushing_band == CUSHING_BAND_NEAR_BOTTOM
+
+
+def test_cushing_honest_null_when_capacity_unconfigured(monkeypatch, tmp_path):
+    # AC#3: with a config that has NO capacity block on Cushing, the row renders
+    # the normal change-first view with NO %/badge — never an invented %.
+    cfg = tmp_path / "eia_no_capacity.yaml"
+    cfg.write_text(
+        "defaults:\n"
+        "  observation_start: \"2005-01-01\"\n"
+        "  revision_lookback_days: 14\n"
+        "series:\n"
+        f"  - {{ id: {_CUSHING_SERIES_ID}, label: Cushing, unit: \"Thousand Barrels\", panel: B }}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("EIA_SERIES_CONFIG", str(cfg))
+    monkeypatch.setenv("USDA_SERIES_CONFIG", str(tmp_path / "missing_usda.yaml"))
+    (tmp_path / "missing_usda.yaml").write_text("series: []\n", encoding="utf-8")
+    today = dt.date(2026, 6, 17)
+    we = dt.date(2026, 6, 12)
+    latest = [_lrow(_CUSHING_SERIES_ID, we, 18000.0, "Thousand Barrels", "EIA")]
+    view = panel_b.build_view(_FakeEngine(latest, []), today=today)
+    row = _find_row(view, _CUSHING_SERIES_ID)
+    assert row.capacity_pct_label == ""
+    assert row.cushing_band == CUSHING_BAND_NONE
+    assert row.cushing_band_label == ""
+    # The normal level render is still present.
+    assert row.level_label == "18,000 Thousand Barrels"
+
+
 def test_cold_start_percentile_accruing_no_verdict(monkeypatch):
     # Only a couple of weekly obs -> below PANEL_B_MIN_HISTORY_WEEKLY -> accruing,
     # no verdict, but raw level + change still shown.
@@ -685,8 +834,23 @@ def _representative_view():
         headline_arrow="↑", secondary=[("Δ vs same qtr last yr", "+700,000,000 BU")],
         percentile_label="— (accruing 4/8)", verdict=VERDICT_NONE, history_obs=4,
     )
+    cushing = panel_b.InventoryRow(
+        series_id=_CUSHING_SERIES_ID, label="Cushing OK Crude Oil Stocks excl SPR",
+        unit="Thousand Barrels", source="EIA", kind=KIND_ENERGY_STOCK,
+        cadence=CADENCE_WEEKLY, group=panel_b.GROUP_ENERGY_STOCKS, is_flow=False,
+        date=dt.date(2026, 6, 12), level=18000.0, stale=False,
+        level_label="18,000 Thousand Barrels",
+        headline_label="-1,000 Thousand Barrels", headline_caption="weekly build(+)/draw(−)",
+        headline_arrow="↓", secondary=[("Δ vs same wk last yr", "-3,000 Thousand Barrels")],
+        percentile_label="5", verdict=VERDICT_TIGHT,
+        translation="inventory low in its own range → supply tight → upside tail risk → vol-bid context",
+        history_obs=120,
+        capacity_pct_label="24% of operable shell capacity",
+        cushing_band=CUSHING_BAND_NEAR_BOTTOM,
+        cushing_band_label="NEAR TANK BOTTOM — delivery-point tight → backwardation/squeeze pressure → vol-bid context",
+    )
     groups = [
-        panel_b.InventoryGroup(panel_b.GROUP_ENERGY_STOCKS, "Energy — Stocks", "x", [crude]),
+        panel_b.InventoryGroup(panel_b.GROUP_ENERGY_STOCKS, "Energy — Stocks", "x", [crude, cushing]),
         panel_b.InventoryGroup(panel_b.GROUP_ENERGY_FLOW, "Energy — Flow", "x", [flow]),
         panel_b.InventoryGroup(panel_b.GROUP_GRAIN_STOCKS, "Grains — Stocks", "x", [corn]),
         panel_b.InventoryGroup(panel_b.GROUP_GRAIN_PRODUCTION, "Grains — Production", "x", []),
@@ -708,6 +872,8 @@ def test_panel_b_route_renders_and_is_banned_phrase_clean(monkeypatch):
     body = resp.text
     assert "Panel B" in body
     assert "421,000 Thousand Barrels" in body  # native unit + thousands sep.
+    assert "24% of operable shell capacity" in body  # Cushing capacity figure (#19).
+    assert "NEAR TANK BOTTOM" in body  # Cushing near-bottom badge (#19).
     assert "FLOW" in body  # flow tag rendered.
     assert "not seasonally adjusted" in body.lower() or "NOT the EIA 5-yr band" in body
     assert "accruing 4/8" in body  # cold-start grain percentile.
