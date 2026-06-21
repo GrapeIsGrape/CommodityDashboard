@@ -4,3 +4,6 @@ psycopg2-binary==2.9.10
 PyYAML==6.0.2
 requests==2.32.3
 yfinance==0.2.66
+# zoneinfo needs an IANA tz database; the python:3.12-slim base image ships
+# none, so the scheduler's America/New_York lookup needs this (#23).
+tzdata==2024.2

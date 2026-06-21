@@ -16,6 +16,7 @@ _DEFAULT_FRED_SERIES_PATH = _CONFIG_DIR / "fred_series.yaml"
 _DEFAULT_EIA_SERIES_PATH = _CONFIG_DIR / "eia_series.yaml"
 _DEFAULT_USDA_SERIES_PATH = _CONFIG_DIR / "usda_series.yaml"
 _DEFAULT_CFTC_MARKETS_PATH = _CONFIG_DIR / "cftc_markets.yaml"
+_DEFAULT_SCHEDULER_PATH = _CONFIG_DIR / "scheduler.yaml"
 
 
 def get_database_url() -> URL:
@@ -113,5 +114,18 @@ def load_cftc_markets(path: str | os.PathLike | None = None) -> dict:
     Override the location with the CFTC_MARKETS_CONFIG env var or the ``path`` arg.
     """
     resolved = Path(path or os.environ.get("CFTC_MARKETS_CONFIG") or _DEFAULT_CFTC_MARKETS_PATH)
+    with open(resolved, "r", encoding="utf-8") as fh:
+        return yaml.safe_load(fh)
+
+
+def load_scheduler_config(path: str | os.PathLike | None = None) -> dict:
+    """Load the ETL scheduler config (slots, session window, timezone) from
+    config/scheduler.yaml.
+
+    Override the location with the SCHEDULER_CONFIG env var or the ``path`` arg.
+    The timezone may additionally be overridden by the ETL_TZ env var, applied
+    by the scheduler itself so the file stays the single source of slot timing.
+    """
+    resolved = Path(path or os.environ.get("SCHEDULER_CONFIG") or _DEFAULT_SCHEDULER_PATH)
     with open(resolved, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)

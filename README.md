@@ -190,7 +190,7 @@ docker compose up --build
 ```
 
 - Dashboard → http://localhost:8000/ ("it's alive"), health → http://localhost:8000/health (`{"status":"ok"}`).
-- `etl` applies migrations (`alembic upgrade head`) on boot, then idles (no scheduler yet).
+- `etl` applies migrations (`alembic upgrade head`) on boot, then runs the in-process scheduler — it fires each ET-anchored slot at its time (see §9.1).
 - Re-running `docker compose up` is a safe no-op; Postgres persists in the `pgdata` volume.
 
 Apply migrations manually if needed:
@@ -198,6 +198,64 @@ Apply migrations manually if needed:
 ```bash
 docker compose run --rm etl alembic -c migrations/alembic.ini upgrade head
 ```
+
+### 9.1 The ETL scheduler (ET-anchored, session-guarded, swappable)
+
+The `etl` service drives the data sources on a schedule so the panels show live,
+accruing data instead of permanent cold-start placeholders. The schedule is
+**config-driven** (`config/scheduler.yaml`) and resolves against
+**`America/New_York`** (DST-automatic — never a fixed UTC offset). Override only
+the timezone via the `ETL_TZ` env var; per-slot times live in the config file.
+
+Canonical ET cadence (the slots):
+
+| Slot (ET) | Days | Sources | Why |
+|---|---|---|---|
+| **08:30** | daily | `fred` | macro prints/revisions, idempotent daily poll |
+| **11:00** | daily | `eia` | release (10:30 ET) + 30 min buffer |
+| **12:15** | daily | `usda` | NASS reports land ~12:00 ET |
+| **15:30** | weekdays | `curve_shape` | anchored to NYMEX settle; **before the ~18:00 ET Globex reopen** |
+| **16:00** | daily | `cftc` | COT Legacy released Fri ~15:30 ET + buffer |
+| **16:20** | weekdays | `iv`, `vol_indices`, `prices` | settled ATM strike with a live `bid>0`; final vol-index print |
+
+The same `etl` image runs two ways with **no code change** — pick the one your
+target supports:
+
+- **Long-running in-process scheduler** (default — Docker Compose): the image
+  `CMD` `python -m etl.run` applies migrations then ticks once a minute, firing
+  each slot at its ET time. Nothing else to configure; just keep the service up.
+- **One-shot single-slot** (external cron — Railway / Synology DSM): the cron
+  fires `python -m etl.run --slot NAME` once per slot. Migrations still run
+  first, then exactly that slot's sources execute and the process exits.
+  Configured slot names: `fred`, `eia`, `usda`, `curve`, `cftc`, `close-batch`.
+
+**Session-window self-guard (the portability backstop).** The timing-sensitive
+market-data slots (`curve`, `close-batch`) only run inside the valid ET close
+window and on a weekday. **If a target can only cron in UTC**, a 00:00 UTC job
+lands ~19–20 ET — outside the window — and the guard **skips the work and logs
+why** rather than pulling a closed, zero-bid option chain (which would NULL
+`iv.py` and leave Panel D's IV-rank stuck forever). So the safest portable setup
+is to schedule the one-shot crons at the **ET** equivalent of each slot. If your
+cron is UTC-only, schedule the market-data slots to land inside 15:25–16:35 ET —
+that is **20:25–21:35 UTC in winter (EST)** and **19:25–20:35 UTC in summer
+(EDT)**, so pick the time for the half of the year that matters most and let the
+session-guard be the safety net for any DST drift the other half. The
+release-driven slots (`fred`/`eia`/`usda`/
+`cftc`) are idempotent daily polls, so their exact UTC landing time is not
+critical — re-running is a safe no-op.
+
+#### Synology DSM Task Scheduler
+
+In **Control Panel → Task Scheduler**, create one **scheduled task** per slot
+(User-defined script) running the `etl` container's one-shot mode, e.g.:
+
+```bash
+docker exec commoditydashboard-etl-1 python -m etl.run --slot close-batch
+```
+
+Set each task's time to the ET equivalent of its slot (DSM uses the NAS's local
+time — set the NAS timezone to ET, or convert and rely on the session-guard for
+the market-data slots).
 
 ### Deploy to Railway
 
@@ -216,8 +274,10 @@ Railway does **not** read `docker-compose.yml` or `.env` — you create services
    POSTGRES_PASSWORD = ${{Postgres.PGPASSWORD}}
    ```
 
-   Do **not** set `PORT` (Railway injects it; the dashboard Dockerfile honours `$PORT`) or `DASHBOARD_PORT` (local Compose only). FRED/EIA/USDA/CFTC keys are added to the `etl` service in Phase 2, not now.
+   Do **not** set `PORT` (Railway injects it; the dashboard Dockerfile honours `$PORT`) or `DASHBOARD_PORT` (local Compose only). Add the FRED/EIA/USDA/CFTC keys to the `etl` service so the scheduled sources can pull.
 
-5. **No start command and no cron** this phase — each Dockerfile's `CMD` is the start command, and the scheduler is deliberately deferred (§2). `etl` runs migrations on deploy, then idles.
+5. **Schedule the ETL.** Two options (see §9.1):
+   - **Leave the `etl` service running** — its `CMD` is the in-process scheduler, which fires every slot at its ET time. Simplest; one always-on service.
+   - **Use Railway cron** — set a **Cron Schedule** per slot on the `etl` service (or duplicate cron services), each running `python -m etl.run --slot NAME`. Railway crons are **UTC**, so schedule the market-data slots (`curve`/`close-batch`) at the UTC time that lands inside the 15:25–16:35 ET window; the AC#4 session-guard is the backstop against DST drift, and the release feeds are idempotent so their exact time is uncritical.
 
-Redeploys are safe: `alembic upgrade head` is a no-op at head, and the Postgres volume persists. Builds deploy from `main`.
+Redeploys are safe: `alembic upgrade head` is a no-op at head, scheduled re-runs upsert on natural keys (no duplicates), and the Postgres volume persists. Builds deploy from `main`.

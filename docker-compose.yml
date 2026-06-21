@@ -21,6 +21,12 @@ services:
       context: .
       dockerfile: etl/Dockerfile
     env_file: .env
+    # The image CMD (`python -m etl.run`) applies migrations then runs the
+    # long-running in-process scheduler (#23), firing each ET-anchored slot at
+    # its time. Slot timing + timezone are config/env-driven (config/scheduler.yaml
+    # + ETL_TZ), so this same image is portable: on Railway/DSM an external cron
+    # instead invokes `python -m etl.run --slot NAME` once per slot. See README §9.
+    command: ["python", "-m", "etl.run"]
     depends_on:
       postgres:
         condition: service_healthy

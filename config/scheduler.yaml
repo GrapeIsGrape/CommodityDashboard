@@ -1,0 +1,64 @@
+# ETL scheduler configuration (etl/scheduler.py + etl/run.py — #23).
+#
+# Slot timing is config-driven, never hardcoded in code (CLAUDE.md §3/§8).
+# Times are wall-clock in the `timezone` below (DST-automatic via zoneinfo),
+# NEVER a fixed UTC offset. The TZ default may be overridden by the ETL_TZ env
+# var; per-slot times live here.
+#
+# Each slot fires its listed sources (by module name under etl/sources/) at the
+# given ET time. `session_guarded: true` marks the timing-sensitive market-data
+# batch — those sources only run inside the valid ET close window (AC#4); if the
+# scheduler is invoked outside it (e.g. a UTC-only external cron), the guard
+# skips the work and logs why rather than pulling a stale/zero-bid chain.
+#
+# `days` is `daily` (release-driven, idempotent poll) or `weekdays` (Mon–Fri
+# only — markets closed at weekends).
+#
+# Rationale per slot is documented in issue #23 (AC#2). Do NOT encode any source
+# release calendar here — the daily idempotent poll absorbs holiday-shifted
+# releases.
+
+timezone: America/New_York
+
+# The ET wall-clock window inside which a session-guarded (market-data) run is
+# accepted. Outside it the guard skips + logs (AC#4). It spans the afternoon
+# settle period so both session-guarded slots fall inside it: the 15:30 curve
+# run (anchored to the 14:30 ET NYMEX settle) and the 16:20 close batch
+# (16:15–16:25 ET settled-ATM / final vol-index). It deliberately CLOSES before
+# the ~18:00 ET Globex reopen (curve legs desync) and well before a 00:00 UTC
+# (~19–20 ET) cron — that out-of-window invocation is what the guard rejects.
+session_window:
+  open: "15:25"   # before the 15:30 curve slot; after the 14:30 ET NYMEX settle
+  close: "16:35"  # after the 16:20 close batch; before the ~18:00 Globex reopen
+
+slots:
+  fred:
+    at: "08:30"
+    days: daily
+    session_guarded: false
+    sources: [fred]
+  eia:
+    at: "11:00"
+    days: daily
+    session_guarded: false
+    sources: [eia]
+  usda:
+    at: "12:15"
+    days: daily
+    session_guarded: false
+    sources: [usda]
+  curve:
+    at: "15:30"
+    days: weekdays
+    session_guarded: true
+    sources: [curve_shape]
+  cftc:
+    at: "16:00"
+    days: daily
+    session_guarded: false
+    sources: [cftc]
+  close-batch:
+    at: "16:20"
+    days: weekdays
+    session_guarded: true
+    sources: [iv, vol_indices, prices]
