@@ -87,28 +87,41 @@ import datetime as _dt  # noqa: E402
 
 def test_shape_etl_row_iso_formats_and_keeps_last_success(monkeypatch):
     dm = _dashboard_main(monkeypatch)
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+    # now_et is a Wednesday 17:00 — 16:20 slot has fired, last weekday = Wednesday
+    now_et = _dt.datetime(2026, 6, 24, 17, 0, tzinfo=ET)
+    # run_date = today's date → not stale for a weekdays cadence
+    cadence_map = {("close-batch", "iv"): ("weekdays", "16:20")}
     row = {
         "slot": "close-batch",
         "source": "iv",
-        "run_date": _dt.date(2026, 6, 22),
+        "run_date": _dt.date(2026, 6, 24),
         "run_finished_at": _dt.datetime(2026, 6, 22, 20, 22, tzinfo=_dt.timezone.utc),
         "last_status": "failure",
         # last success pre-dates the failed last attempt
         "last_success_run_date": _dt.date(2026, 6, 21),
         "last_success_finished_at": _dt.datetime(2026, 6, 21, 20, 22, tzinfo=_dt.timezone.utc),
     }
-    shaped = dm._shape_etl_row(row)
+    shaped = dm._shape_etl_row(row, cadence_map, now_et)
     assert shaped["slot"] == "close-batch"
     assert shaped["source"] == "iv"
     assert shaped["last_status"] == "failure"
-    assert shaped["run_date"] == "2026-06-22"
+    assert shaped["run_date"] == "2026-06-24"
     assert shaped["run_finished_at"] == "2026-06-22T20:22:00+00:00"
     # last success is older than the last (failed) attempt — surfaced distinctly.
     assert shaped["last_success_run_date"] == "2026-06-21"
+    # stale field is present and typed correctly
+    assert "stale" in shaped
+    assert shaped["stale"] is False  # run_date == last_expected_weekday
 
 
 def test_shape_etl_row_passes_through_nulls(monkeypatch):
     dm = _dashboard_main(monkeypatch)
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+    now_et = _dt.datetime(2026, 6, 24, 17, 0, tzinfo=ET)
+    cadence_map = {("close-batch", "iv"): ("weekdays", "16:20")}
     row = {
         "slot": "close-batch",
         "source": "iv",
@@ -118,11 +131,12 @@ def test_shape_etl_row_passes_through_nulls(monkeypatch):
         "last_success_run_date": None,   # never succeeded
         "last_success_finished_at": None,
     }
-    shaped = dm._shape_etl_row(row)
+    shaped = dm._shape_etl_row(row, cadence_map, now_et)
     assert shaped["run_finished_at"] is None
     assert shaped["last_success_run_date"] is None
     assert shaped["last_success_finished_at"] is None
     assert shaped["last_status"] == "skipped"
+    assert "stale" in shaped
 
 
 def test_read_etl_summary_none_when_table_missing(monkeypatch):
@@ -239,6 +253,206 @@ def test_configured_slot_sources_degrades_on_bad_config(monkeypatch):
     monkeypatch.setattr(dm, "load_scheduler_config", _boom)
     # A bad config degrades to an empty configured set — never raises (no 500).
     assert dm._configured_slot_sources() == []
+
+
+# --- #25: is_etl_source_stale pure clock-injectable tests -------------------
+
+def _et_now(year, month, day, hour=12, minute=0):
+    from zoneinfo import ZoneInfo
+    return _dt.datetime(year, month, day, hour, minute, tzinfo=ZoneInfo("America/New_York"))
+
+
+def test_stale_weekday_friday_run_saturday_now(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # Friday run, Saturday now — last expected weekday = Friday → not stale.
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 19),   # Friday
+        "weekdays",
+        _et_now(2026, 6, 20),    # Saturday
+    ) is False
+
+
+def test_stale_weekday_friday_run_sunday_now(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # Friday run, Sunday now — last expected weekday = Friday → not stale.
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 19),   # Friday
+        "weekdays",
+        _et_now(2026, 6, 21),    # Sunday
+    ) is False
+
+
+def test_stale_weekday_friday_run_monday_morning_not_stale(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # Friday run, Monday 08:00 ET — 16:20 slot has NOT fired yet.
+    # Expected datum = last_expected_session(Monday) = Friday → not stale.
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 19),   # Friday
+        "weekdays",
+        _et_now(2026, 6, 22, 8, 0),   # Monday 08:00 ET
+        slot_time_str="16:20",
+    ) is False
+
+
+def test_stale_weekday_friday_run_monday_evening_stale(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # Friday run, Monday 17:00 ET — 16:20 slot has fired.
+    # Expected datum = _last_trading_session(Monday) = Monday → stale.
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 19),   # Friday
+        "weekdays",
+        _et_now(2026, 6, 22, 17, 0),  # Monday 17:00 ET
+        slot_time_str="16:20",
+    ) is True
+
+
+def test_stale_weekday_friday_run_monday_no_slot_time_old_behavior(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # No slot_time_str → graceful degradation to old model:
+    # Monday is a trading session → expected = Monday → Friday < Monday → stale.
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 19),   # Friday
+        "weekdays",
+        _et_now(2026, 6, 22, 8, 0),   # Monday 08:00 ET
+        slot_time_str=None,
+    ) is True
+
+
+def test_stale_weekday_malformed_slot_time_degrades_gracefully(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # A malformed slot_time_str (not parseable) must not raise — falls back to
+    # the old _last_trading_session model (slightly eager STALE on Mon morning).
+    for bad in ("NOT_A_TIME", "25:99", 1620, "", "16:20:00"):
+        result = dm.is_etl_source_stale(
+            _dt.date(2026, 6, 19),  # Friday
+            "weekdays",
+            _et_now(2026, 6, 22, 8, 0),  # Monday 08:00 ET
+            slot_time_str=bad,
+        )
+        assert isinstance(result, bool), f"expected bool, got {result!r} for {bad!r}"
+
+
+def test_stale_weekday_missed_session(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # run_date is two weekdays ago — clearly stale.
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 17),   # Wednesday
+        "weekdays",
+        _et_now(2026, 6, 19),    # Friday (expected = Friday, run_date < Friday)
+    ) is True
+
+
+def test_stale_daily_within_grace(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # age = 1 day — within grace (> 2 triggers stale).
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 23),
+        "daily",
+        _et_now(2026, 6, 24),
+    ) is False
+
+
+def test_stale_daily_outside_grace(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # age = 3 days — outside grace.
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 21),
+        "daily",
+        _et_now(2026, 6, 24),
+    ) is True
+
+
+def test_stale_daily_grace_boundary_exactly_2_days(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # age == _DAILY_GRACE_DAYS (2) → not stale (condition is strict >).
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 22),
+        "daily",
+        _et_now(2026, 6, 24),
+    ) is False
+
+
+def test_stale_daily_grace_boundary_just_over(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # age == 3 (one past the grace) → stale.
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 6, 21),
+        "daily",
+        _et_now(2026, 6, 24),
+    ) is True
+
+
+def test_stale_weekday_holiday_monday_friday_run_not_stale(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # 2026-01-19 is MLK Day (Monday, a US market holiday).
+    # Friday run (2026-01-16) + holiday-Monday now → _last_trading_session rolls
+    # back to Friday 2026-01-16 (the last real session).
+    # run_date (Friday) < expected (Friday) → False (NOT stale).
+    # The old _last_expected_weekday would have returned Monday 2026-01-19
+    # (not holiday-aware), making this incorrectly stale.
+    assert dm.is_etl_source_stale(
+        _dt.date(2026, 1, 16),    # Friday before MLK Day
+        "weekdays",
+        _et_now(2026, 1, 19),     # MLK Day Monday (holiday)
+    ) is False
+
+
+def test_stale_never_ran_returns_none(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    # None run_date → None (never_ran takes precedence; must not read as stale=False).
+    result = dm.is_etl_source_stale(None, "daily", _et_now(2026, 6, 24))
+    assert result is None
+    result2 = dm.is_etl_source_stale(None, "weekdays", _et_now(2026, 6, 24))
+    assert result2 is None
+
+
+def test_shape_etl_row_stale_flag_present_and_typed(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    from zoneinfo import ZoneInfo
+    ET = ZoneInfo("America/New_York")
+    # Wednesday 2026-06-24 17:00 — 16:20 slot has fired, last weekday = Wednesday
+    now_et = _dt.datetime(2026, 6, 24, 17, 0, tzinfo=ET)
+    cadence_map = {("close-batch", "iv"): ("weekdays", "16:20")}
+
+    # Fresh run (same day) → stale=False
+    row_fresh = {
+        "slot": "close-batch", "source": "iv",
+        "run_date": _dt.date(2026, 6, 24),
+        "run_finished_at": None,
+        "last_status": "success",
+        "last_success_run_date": _dt.date(2026, 6, 24),
+        "last_success_finished_at": None,
+    }
+    shaped = dm._shape_etl_row(row_fresh, cadence_map, now_et)
+    assert "stale" in shaped
+    assert shaped["stale"] is False
+
+    # Stale run (Monday, now is Wednesday 17:00 — slot fired) → stale=True
+    row_stale = {
+        "slot": "close-batch", "source": "iv",
+        "run_date": _dt.date(2026, 6, 22),
+        "run_finished_at": None,
+        "last_status": "success",
+        "last_success_run_date": _dt.date(2026, 6, 22),
+        "last_success_finished_at": None,
+    }
+    shaped_stale = dm._shape_etl_row(row_stale, cadence_map, now_et)
+    assert shaped_stale["stale"] is True
+
+    # Unknown cadence (slot/source not in map) → stale=None
+    row_unknown = dict(row_fresh)
+    row_unknown["slot"] = "unknown-slot"
+    row_unknown["source"] = "unknown-source"
+    shaped_unknown = dm._shape_etl_row(row_unknown, cadence_map, now_et)
+    assert shaped_unknown["stale"] is None
+
+
+def test_never_ran_row_stale_is_none(monkeypatch):
+    dm = _dashboard_main(monkeypatch)
+    row = dm._never_ran_row("fred", "fred")
+    assert "stale" in row
+    assert row["stale"] is None
+
 
 _DB_ENV = {
     "POSTGRES_USER": "commodity",
@@ -376,5 +590,40 @@ def test_health_etl_summary_surfaces_never_ran_for_configured_source(health_clie
         assert entry["last_status"] == "never_ran"
         assert entry["run_date"] is None
         assert entry["last_success_run_date"] is None
+        # #25: stale key is present; never_ran → None (not False, not True)
+        assert "stale" in entry
+        assert entry["stale"] is None
+    finally:
+        engine.dispose()
+
+
+def test_health_etl_summary_stale_key_present_on_all_rows(health_client):
+    """Every row in the /health etl summary carries a 'stale' key (#25 AC#5/10).
+
+    The ``now_et`` clock is injected directly into ``_read_etl_summary`` via the
+    live connection so the staleness verdict is deterministic regardless of when
+    the test runs.
+    """
+    _, _ = health_client
+    import datetime as dtime
+    from zoneinfo import ZoneInfo
+
+    from common.config import get_database_url
+    from sqlalchemy import create_engine
+
+    engine = create_engine(get_database_url())
+    # A fixed recent weekday so freshly-inserted test rows are never stale.
+    now_et = dtime.datetime(2026, 6, 24, 17, 0, tzinfo=ZoneInfo("America/New_York"))
+    import dashboard.main as dashboard_main
+
+    try:
+        with engine.connect() as conn:
+            result = dashboard_main._read_etl_summary(conn, now_et=now_et)
+        assert isinstance(result, list)
+        for row in result:
+            assert "stale" in row, f"'stale' missing from row {row}"
+            assert row["stale"] is None or isinstance(row["stale"], bool), (
+                f"stale must be None or bool, got {type(row['stale'])} in {row}"
+            )
     finally:
         engine.dispose()
