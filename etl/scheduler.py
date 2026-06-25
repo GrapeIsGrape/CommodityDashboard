@@ -35,6 +35,7 @@ from typing import Callable, Mapping, Optional
 from zoneinfo import ZoneInfo
 
 from common.config import load_scheduler_config
+from etl import run_log
 
 logger = logging.getLogger("etl.scheduler")
 
@@ -145,6 +146,11 @@ def slots_due_at(schedule: Schedule, now_et: dt.datetime) -> list[Slot]:
 
 SourceRunner = Callable[[], None]
 
+# Signature: (slot, source, run_date, status, *, run_started_at, run_finished_at,
+# detail). Defaults to the best-effort DB writer; tests inject a mock so the pure
+# dispatch logic stays DB-free.
+Heartbeat = Callable[..., bool]
+
 
 def _default_source_runners() -> dict[str, SourceRunner]:
     """Resolve each source module's existing ``run()`` entrypoint, imported
@@ -169,17 +175,31 @@ def dispatch_slot(
     slot: Slot,
     now_et: dt.datetime,
     runners: Mapping[str, SourceRunner],
+    heartbeat: Optional[Heartbeat] = None,
 ) -> list[str]:
     """Run every source in ``slot`` with per-source isolation (AC#6).
 
     If the slot is session-guarded and ``now_et`` is outside the valid ET window,
-    the whole batch is skipped and logged (AC#4) — nothing runs. Otherwise each
-    source's ``run()`` is invoked in turn; one raising is caught + logged and the
-    remaining sources still execute (AC#6). Idempotency is the sources' own
+    the whole batch is skipped and logged (AC#4) — nothing runs, and every source
+    is positively recorded as ``skipped`` in the run-log so "guard skipped it" is
+    distinguishable from "never fired" (#24 AC#4). Otherwise each source's
+    ``run()`` is invoked in turn; one raising is caught + logged and the remaining
+    sources still execute (AC#6). Idempotency is the sources' own
     upsert-on-natural-key (AC#7), so a re-dispatch is safe.
+
+    A run-log row is written per source per dispatch (#24): ``success`` on return,
+    ``failure`` with a short redacted ``detail`` on raise, ``skipped`` on the
+    guard path. The ``heartbeat`` write is **best-effort** — defaulted to the DB
+    writer but injectable for tests — and a failing heartbeat is itself swallowed
+    inside the writer so it can never abort the batch (#24 AC#5). The ET schedule
+    day is ``now_et.date()`` so a late-ET run crossing UTC midnight still books to
+    the correct day.
 
     Returns the list of source names that completed without raising (mostly for
     observability / tests)."""
+    heartbeat = heartbeat if heartbeat is not None else run_log.write_run_log
+    run_date = now_et.date()
+
     if slot.session_guarded and not in_session_window(schedule, now_et):
         logger.warning(
             "Slot %s skipped: %s ET is outside the valid session window %s–%s "
@@ -191,6 +211,20 @@ def dispatch_slot(
             schedule.session_window.close.strftime("%H:%M"),
             list(slot.sources),
         )
+        skip_detail = (
+            f"session guard: {now_et.strftime('%H:%M %Z')} outside "
+            f"{schedule.session_window.open.strftime('%H:%M')}–"
+            f"{schedule.session_window.close.strftime('%H:%M')} ET"
+        )
+        for name in slot.sources:
+            _record_heartbeat(
+                heartbeat,
+                slot.name,
+                name,
+                run_date,
+                run_log.STATUS_SKIPPED,
+                detail=skip_detail,
+            )
         return []
 
     succeeded: list[str] = []
@@ -200,14 +234,34 @@ def dispatch_slot(
             logger.error("Slot %s references unknown source %r; skipping.", slot.name, name)
             continue
         logger.info("Slot %s: running source %s...", slot.name, name)
+        started_at = run_log.now_utc()
         try:
             runner()
             succeeded.append(name)
-        except Exception:
+            _record_heartbeat(
+                heartbeat,
+                slot.name,
+                name,
+                run_date,
+                run_log.STATUS_SUCCESS,
+                run_started_at=started_at,
+                run_finished_at=run_log.now_utc(),
+            )
+        except Exception as exc:
             logger.exception(
                 "Slot %s: source %s failed; continuing with the rest of the slot.",
                 slot.name,
                 name,
+            )
+            _record_heartbeat(
+                heartbeat,
+                slot.name,
+                name,
+                run_date,
+                run_log.STATUS_FAILURE,
+                run_started_at=started_at,
+                run_finished_at=run_log.now_utc(),
+                detail=run_log.summarize_exception(exc),
             )
     logger.info(
         "Slot %s complete: %d/%d sources succeeded.",
@@ -216,6 +270,22 @@ def dispatch_slot(
         len(slot.sources),
     )
     return succeeded
+
+
+def _record_heartbeat(heartbeat: Heartbeat, slot: str, source: str, run_date: dt.date,
+                      status: str, **kwargs) -> None:
+    """Invoke the heartbeat writer, isolating it so even an unexpected raise in a
+    custom writer cannot abort the source batch (#24 AC#5)."""
+    try:
+        heartbeat(slot, source, run_date, status, **kwargs)
+    except Exception:
+        logger.warning(
+            "Run-log heartbeat invocation raised for slot=%s source=%s; "
+            "ignored (observability only).",
+            slot,
+            source,
+            exc_info=True,
+        )
 
 
 def run_slot(
