@@ -25,7 +25,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
-from common.config import get_database_url, load_scheduler_config
+from common.config import get_database_url, load_release_calendar, load_scheduler_config
+from common.release_calendar import upcoming_events
 from dashboard.panels import panel_a, panel_b, panel_c, panel_d, panel_macro, panel_sentiment
 from dashboard.panels.panel_a import (
     is_trading_session as _is_trading_session,
@@ -144,19 +145,25 @@ templates.env.globals["fmt_price"] = panel_c.format_price
 
 
 @app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return (
-        "<html><head><title>CommodityDashboard</title></head>"
-        "<body><h1>CommodityDashboard is alive</h1>"
-        "<p>Phase 4 in progress. See "
-        '<a href="/panel/a">Panel A — Macro / Cross-Asset</a>, '
-        '<a href="/panel/b">Panel B — Fundamentals / Inventory</a>, '
-        '<a href="/panel/c">Panel C — Positioning &amp; Flow</a>, '
-        '<a href="/panel/d">Panel D — Volatility</a>, '
-        '<a href="/panel/macro">Macro-Context (TLT/VTI/QQQ)</a>, '
-        '<a href="/panel/sentiment">Sentiment (placeholder)</a>, '
-        'or <a href="/health">/health</a> for service status.</p>'
-        "</body></html>"
+def index(request: Request) -> HTMLResponse:
+    now_et = dt.datetime.now(ET)
+    try:
+        cal_config = load_release_calendar()
+        events, unconfigured_types = upcoming_events(now_et, cal_config)
+    except Exception:
+        logger.exception("Release calendar computation failed; rendering empty strip")
+        events, unconfigured_types = [], []
+    today_et = now_et.date()
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {
+            "now_et": now_et,
+            "today_et": today_et,
+            "tomorrow_et": today_et + dt.timedelta(days=1),
+            "calendar_events": events,
+            "unconfigured_cal_types": unconfigured_types,
+        },
     )
 
 

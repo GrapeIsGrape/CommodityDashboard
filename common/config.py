@@ -17,6 +17,7 @@ _DEFAULT_EIA_SERIES_PATH = _CONFIG_DIR / "eia_series.yaml"
 _DEFAULT_USDA_SERIES_PATH = _CONFIG_DIR / "usda_series.yaml"
 _DEFAULT_CFTC_MARKETS_PATH = _CONFIG_DIR / "cftc_markets.yaml"
 _DEFAULT_SCHEDULER_PATH = _CONFIG_DIR / "scheduler.yaml"
+_DEFAULT_RELEASE_CALENDAR_PATH = _CONFIG_DIR / "release_calendar.yaml"
 
 
 def get_database_url() -> URL:
@@ -129,3 +130,22 @@ def load_scheduler_config(path: str | os.PathLike | None = None) -> dict:
     resolved = Path(path or os.environ.get("SCHEDULER_CONFIG") or _DEFAULT_SCHEDULER_PATH)
     with open(resolved, "r", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
+
+
+def load_release_calendar(path: str | os.PathLike | None = None) -> dict:
+    """Load the release-calendar config from config/release_calendar.yaml.
+
+    Override the location with the RELEASE_CALENDAR_CONFIG env var or the
+    ``path`` arg. Returns an empty dict when the file is missing or empty,
+    so rule-computed entries (EIA/NFP/COT) still render without a crash.
+    """
+    resolved = Path(
+        path
+        or os.environ.get("RELEASE_CALENDAR_CONFIG")
+        or _DEFAULT_RELEASE_CALENDAR_PATH
+    )
+    try:
+        with open(resolved, "r", encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return {}

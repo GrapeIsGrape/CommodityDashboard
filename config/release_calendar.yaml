@@ -1,0 +1,54 @@
+# Hard-coded annual release dates for events whose schedule does not follow
+# a fixed weekday rule. Verify against official agency schedules before shipping.
+# Release times are ET (America/New_York). Update once per year.
+
+wasde:
+  label: "WASDE (USDA)"
+  time: "12:00"
+  affected: "ZC/ZS/ZW/ZO/ZR/ZM/ZL (grains) → Panel B"
+  dates_2026:
+    - "2026-01-12"
+    - "2026-02-09"
+    - "2026-03-11"
+    - "2026-04-09"
+    - "2026-05-12"
+    - "2026-06-11"
+    - "2026-07-10"
+    - "2026-08-12"
+    - "2026-09-11"
+    - "2026-10-09"
+    - "2026-11-09"
+    - "2026-12-10"
+
+fomc:
+  label: "FOMC Decision"
+  time: "14:00"
+  affected: "rates / Panel A; broad macro risk"
+  # Decision dates only (Day 2 of the meeting). 8 per year.
+  dates_2026:
+    - "2026-01-28"
+    - "2026-03-18"
+    - "2026-05-06"
+    - "2026-06-17"
+    - "2026-07-29"
+    - "2026-09-16"
+    - "2026-11-04"
+    - "2026-12-16"
+
+cpi:
+  label: "CPI (BLS)"
+  time: "08:30"
+  affected: "DXY / real yields / Panel A; broad"
+  dates_2026:
+    - "2026-01-15"
+    - "2026-02-12"
+    - "2026-03-12"
+    - "2026-04-10"
+    - "2026-05-13"
+    - "2026-06-11"
+    - "2026-07-15"
+    - "2026-08-12"
+    - "2026-09-16"
+    - "2026-10-15"
+    - "2026-11-12"
+    - "2026-12-10"

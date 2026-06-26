@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}CommodityDashboard{% endblock %}
+
+{% block style %}
+  .nav-links { margin-bottom: 28px; }
+  .nav-links a { margin-right: 16px; font-size: 14px; }
+
+  .cal-section { margin-top: 8px; }
+  .cal-title { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+  .cal-note { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+  .cal-warn { color: #e6a040; font-size: 12px; margin-bottom: 8px; }
+
+  .cal-table { width: 100%; border-collapse: collapse; }
+  .cal-table th {
+    text-align: left; padding: 5px 10px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted); font-weight: 600; font-size: 12px;
+  }
+  .cal-table td {
+    padding: 6px 10px; border-bottom: 1px solid var(--line);
+    white-space: nowrap; font-size: 13px;
+  }
+  .cal-table td.affected { color: var(--muted); font-size: 12px; white-space: normal; }
+
+  .day-label { font-weight: 700; }
+  .day-today  { color: #5aa9ff; }
+  .day-tomorrow { color: #88d8b0; }
+
+  tr.elapsed td { color: var(--muted); text-decoration: line-through; }
+  tr.elapsed .no-strike {
+    text-decoration: none;
+  }
+  .elapsed-badge {
+    display: inline-block;
+    font-size: 11px; color: var(--muted);
+    background: #2a3340; padding: 1px 5px; border-radius: 3px; margin-left: 4px;
+  }
+  tr.de-emphasized td { color: var(--muted); font-size: 12px; }
+  tr.de-emphasized td.affected { font-size: 11px; }
+
+  .holiday-badge {
+    font-size: 11px; color: #e6a040;
+    background: #2a2010; padding: 1px 5px; border-radius: 3px; margin-left: 4px;
+  }
+  .cot-note { color: var(--muted); font-size: 11px; margin-left: 4px; }
+  .empty-cal { color: var(--muted); padding: 12px 0; font-size: 13px; }
+{% endblock %}
+
+{% block content %}
+
+<div class="nav-links">
+  <a href="/panel/a">Panel A — Macro / Cross-Asset</a>
+  <a href="/panel/b">Panel B — Fundamentals / Inventory</a>
+  <a href="/panel/c">Panel C — Positioning &amp; Flow</a>
+  <a href="/panel/d">Panel D — Volatility</a>
+  <a href="/panel/macro">Macro-Context (TLT/VTI/QQQ)</a>
+  <a href="/panel/sentiment">Sentiment (placeholder)</a>
+  <a href="/health">/health</a>
+</div>
+
+<div class="cal-section">
+  <div class="cal-title">Upcoming Releases — next 7 days</div>
+  <div class="cal-note">Times are ET. COT rows are positioning reads — not vol-moving events.</div>
+
+  {% if unconfigured_cal_types %}
+  <div class="cal-warn">
+    Dates for {{ unconfigured_cal_types | join(", ") }} not yet configured for all years in this window — only rule-computed entries shown for that period.
+  </div>
+  {% endif %}
+
+  {% if calendar_events %}
+  <table class="cal-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Day</th>
+        <th>Time (ET)</th>
+        <th>Release</th>
+        <th>Affected</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for ev in calendar_events %}
+      {% set is_today = (ev.date == today_et) %}
+      {% set is_tomorrow = (ev.date == tomorrow_et) %}
+      {% set is_elapsed = is_today and (ev.time_et < now_et.time()) %}
+      {% set row_class = "elapsed" if is_elapsed else ("de-emphasized" if ev.de_emphasized else "") %}
+      <tr class="{{ row_class }}">
+        <td>{{ ev.date.isoformat() }}</td>
+        <td>
+          {% if is_today %}
+            <span class="day-label day-today">TODAY</span>
+          {% elif is_tomorrow %}
+            <span class="day-label day-tomorrow">TOMORROW</span>
+          {% else %}
+            {{ ev.date.strftime("%A") }}
+          {% endif %}
+        </td>
+        <td>
+          {{ ev.time_et.strftime("%H:%M") }}
+          {% if is_elapsed %}<span class="elapsed-badge no-strike">passed</span>{% endif %}
+        </td>
+        <td>
+          {{ ev.label }}
+          {% if ev.holiday_delayed %}<span class="holiday-badge">holiday-delayed</span>{% endif %}
+          {% if ev.de_emphasized %}<span class="cot-note">(positioning — not vol-moving)</span>{% endif %}
+        </td>
+        <td class="affected">{{ ev.affected }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-cal">No scheduled releases in the next 7 days.</div>
+  {% endif %}
+</div>
+
+{% endblock %}
