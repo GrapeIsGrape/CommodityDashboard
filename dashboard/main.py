@@ -9,8 +9,12 @@ reads ``macro_metrics``), Panel B (Fundamentals / Inventory, ``/panel/b``, reads
 render via Jinja2 read-only — no SPA, no client-side fetch. The macro-context
 sub-panel (``/panel/macro``, reads ``prices``) and the sentiment placeholder
 panel (``/panel/sentiment``, reads ``sentiment_articles`` + ``sentiment_scores``,
-empty until a separate Writer-2 project populates them) render likewise. The DB
-is never written from a request handler.
+empty until a separate Writer-2 project populates them) render likewise.
+
+The one non-read-only endpoint is ``POST /health/trigger`` (#29): an operator
+button that inserts a row into ``etl_manual_trigger`` so the ETL scheduler can
+pick it up and dispatch all sources immediately.  This is an ops/admin action —
+not market-data write, not trade execution.
 """
 
 import datetime as dt
@@ -20,7 +24,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -131,6 +135,57 @@ def is_etl_source_stale(
     return age_days > _DAILY_GRACE_DAYS
 
 
+# --- Manual ETL trigger constants (#29) -------------------------------------
+
+# How long (minutes) the rate-limit guard blocks a second trigger after the
+# first.  Kept as a module-level constant so pure tests can assert the boundary
+# without importing a live DB.
+_TRIGGER_COOLDOWN_MINUTES = 10
+
+_TRIGGER_CHECK_SQL = text(
+    """
+    SELECT id, requested_at
+    FROM etl_manual_trigger
+    WHERE processed_at IS NULL
+       OR processed_at >= now() - interval '10 minutes'
+    ORDER BY requested_at DESC
+    LIMIT 1
+    """
+)
+
+_TRIGGER_INSERT_SQL = text(
+    "INSERT INTO etl_manual_trigger (slot) VALUES ('all')"
+)
+
+
+def _check_trigger_rate_limit(
+    conn,
+    now: Optional[dt.datetime] = None,
+) -> tuple[bool, Optional[int]]:
+    """Query ``etl_manual_trigger`` to determine whether a new trigger is allowed.
+
+    Returns ``(rate_limited: bool, wait_minutes: Optional[int])``.
+
+    * ``rate_limited=False`` → no blocking row; the caller may INSERT.
+    * ``rate_limited=True`` → a blocking row exists; ``wait_minutes`` is the
+      remaining cooldown (≥1), computed from the most recent ``requested_at``.
+
+    Pure in the sense that the clock is injectable via ``now``.  Raises
+    ``ProgrammingError`` when the table does not exist (pre-migration) and
+    ``OperationalError`` when the DB is down — both must be caught by the caller.
+    """
+    row = conn.execute(_TRIGGER_CHECK_SQL).first()
+    if row is None:
+        return False, None
+    requested_at = row[1]
+    resolved_now = now or dt.datetime.now(dt.timezone.utc)
+    if requested_at.tzinfo is None:
+        requested_at = requested_at.replace(tzinfo=dt.timezone.utc)
+    elapsed_minutes = (resolved_now - requested_at).total_seconds() / 60.0
+    remaining = int(_TRIGGER_COOLDOWN_MINUTES - elapsed_minutes) + 1
+    return True, max(1, remaining)
+
+
 app = FastAPI(title="CommodityDashboard", description="Read-only commodity options monitor")
 
 engine = create_engine(get_database_url(), pool_pre_ping=True)
@@ -227,24 +282,93 @@ def panel_sentiment_view(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "panel_sentiment.html", {"view": view})
 
 
-@app.get("/health")
-def health() -> JSONResponse:
+@app.get("/health", response_class=HTMLResponse)
+def health(
+    request: Request,
+    triggered: Optional[int] = None,
+    rate_limited: Optional[int] = None,
+    wait_minutes: Optional[int] = None,
+    trigger_unavailable: Optional[int] = None,
+) -> HTMLResponse:
+    """Render the health page (HTML): DB status, ETL run summary, and the
+    manual-trigger form (#29).  URL params ``?triggered=1`` / ``?rate_limited=1``
+    drive confirmation / rate-limit banners; ``?trigger_unavailable=1`` hides
+    the trigger button (pre-migration).  Never a 500."""
+    db_ok = False
+    schema_version = None
+    etl_summary = None
+    trigger_available = False
+
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+            db_ok = True
             schema_version = _read_schema_version(conn)
             etl_summary = _read_etl_summary(conn)
-        return JSONResponse(
-            {
-                "status": "ok",
-                "database": "reachable",
-                "schema_version": schema_version,
-                "etl": etl_summary,
-            }
-        )
-    except Exception:
+            if not trigger_unavailable:
+                trigger_available = _is_trigger_table_reachable(conn)
+    except OperationalError:
         logger.exception("Database health check failed")
-        return JSONResponse(status_code=503, content={"status": "error", "database": "unreachable"})
+
+    return templates.TemplateResponse(
+        request,
+        "health.html",
+        {
+            "db_ok": db_ok,
+            "schema_version": schema_version,
+            "etl_summary": etl_summary,
+            "trigger_available": trigger_available,
+            "trigger_unavailable": bool(trigger_unavailable),
+            "cooldown_minutes": _TRIGGER_COOLDOWN_MINUTES,
+            "triggered": bool(triggered),
+            "rate_limited": bool(rate_limited),
+            "wait_minutes": wait_minutes,
+        },
+    )
+
+
+def _is_trigger_table_reachable(conn) -> bool:
+    """Return ``True`` when ``etl_manual_trigger`` exists and is queryable.
+
+    Used by the health page to decide whether to show or hide the trigger
+    button (AC#9/#10).  A ``ProgrammingError`` (pre-migration) → ``False``
+    (button hidden).  Any other error propagates to the caller.
+    """
+    try:
+        conn.execute(text("SELECT 1 FROM etl_manual_trigger LIMIT 0"))
+        return True
+    except ProgrammingError:
+        return False
+
+
+@app.post("/health/trigger")
+def health_trigger(request: Request):  # noqa: ARG001
+    """Insert a manual ETL trigger row then redirect to ``GET /health?triggered=1``.
+
+    Rate-limited: if an unprocessed row or a row processed within the last
+    ``_TRIGGER_COOLDOWN_MINUTES`` minutes already exists, returns a redirect to
+    ``GET /health?rate_limited=1&wait_minutes=N`` instead of inserting.
+
+    Error paths:
+    * ``OperationalError`` (DB down) → JSON 503 (honest, never 500).
+    * ``ProgrammingError`` (pre-migration) → redirect to
+      ``GET /health?trigger_unavailable=1`` (graceful, button hidden).
+    """
+    try:
+        with engine.begin() as conn:
+            rate_limited, wait_minutes = _check_trigger_rate_limit(conn)
+            if rate_limited:
+                url = "/health?rate_limited=1"
+                if wait_minutes is not None:
+                    url += f"&wait_minutes={wait_minutes}"
+                return RedirectResponse(url, status_code=303)
+            conn.execute(_TRIGGER_INSERT_SQL)
+        return RedirectResponse("/health?triggered=1", status_code=303)
+    except ProgrammingError:
+        return RedirectResponse("/health?trigger_unavailable=1", status_code=303)
+    except OperationalError:
+        logger.exception("DB unavailable for manual trigger insert")
+        return JSONResponse({"error": "DB unavailable"}, status_code=503)
 
 
 def _read_schema_version(conn) -> str | None:

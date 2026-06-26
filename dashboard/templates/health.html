@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Health &middot; CommodityDashboard{% endblock %}
+
+{% block style %}
+  .section { margin-bottom: 28px; }
+  .section-title { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+
+  .status-line { font-size: 14px; margin-bottom: 6px; }
+  .ok    { color: #88d8b0; }
+  .error { color: #ff7b72; }
+
+  .trigger-bar { margin-bottom: 20px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .trigger-btn {
+    background: #1f3a5a; border: 1px solid #3a6a9a; color: #a8d0f0;
+    padding: 7px 16px; border-radius: 5px; font-size: 13px; cursor: pointer;
+  }
+  .trigger-btn:hover { background: #2a4f7a; }
+
+  .banner {
+    padding: 10px 16px; border-radius: 5px; font-size: 13px; margin-bottom: 16px;
+  }
+  .banner-green  { background: #1a3a28; color: #88d8b0; border: 1px solid #2a5a3a; }
+  .banner-amber  { background: #2a2010; color: #ffe8a3; border: 1px solid #6b4e00; }
+  .banner-muted  { background: #1a1a2e; color: var(--muted); border: 1px solid var(--line); }
+
+  table.etl { width: 100%; border-collapse: collapse; }
+  table.etl th {
+    text-align: left; padding: 5px 10px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted); font-weight: 600; font-size: 12px;
+  }
+  table.etl td {
+    padding: 6px 10px; border-bottom: 1px solid var(--line);
+    font-size: 13px; white-space: nowrap;
+  }
+  .status-success { color: #88d8b0; }
+  .status-failure { color: #ff7b72; font-weight: 700; }
+  .status-skipped { color: var(--muted); }
+  .status-never_ran { color: #ffe8a3; }
+  .stale-badge { background: var(--stale); color: var(--stale-fg); font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 4px; }
+  .muted { color: var(--muted); }
+  .empty { color: var(--muted); padding: 16px 0; font-size: 13px; }
+  .pre-migration { color: var(--muted); font-size: 13px; font-style: italic; }
+{% endblock %}
+
+{% block content %}
+
+{% if triggered %}
+<div class="banner banner-green">
+  ETL run triggered — check back in a few minutes and watch the ETL Run Summary below for progress.
+</div>
+{% endif %}
+
+{% if rate_limited %}
+<div class="banner banner-amber">
+  Already triggered recently — please wait{{ (" " ~ wait_minutes ~ " minute" ~ ("s" if wait_minutes != 1 else "")) if wait_minutes else "" }} before triggering again.
+</div>
+{% endif %}
+
+{% if trigger_unavailable %}
+<div class="banner banner-muted">
+  ETL trigger not available — run migrations first (schema not yet at 0006_etl_manual_trigger).
+</div>
+{% endif %}
+
+<div class="section">
+  <div class="section-title">Database</div>
+  <div class="status-line">
+    Status: <span class="{{ 'ok' if db_ok else 'error' }}">{{ "reachable" if db_ok else "unreachable" }}</span>
+  </div>
+  {% if schema_version %}
+  <div class="status-line muted">Schema version: {{ schema_version }}</div>
+  {% endif %}
+</div>
+
+{% if trigger_available %}
+<div class="trigger-bar">
+  <form method="post" action="/health/trigger" style="display:inline">
+    <button type="submit" class="trigger-btn">Run all ETL now</button>
+  </form>
+  <span class="muted" style="font-size:12px">Triggers all configured ETL slots immediately (rate-limited to once per {{ cooldown_minutes }} minutes).</span>
+</div>
+{% endif %}
+
+<div class="section">
+  <div class="section-title">ETL Run Summary</div>
+
+  {% if etl_summary is none %}
+    <div class="pre-migration">ETL run log not yet available (table not yet migrated).</div>
+  {% elif etl_summary | length == 0 %}
+    <div class="empty">No ETL runs recorded yet.</div>
+  {% else %}
+  <table class="etl">
+    <thead>
+      <tr>
+        <th>Slot</th>
+        <th>Source</th>
+        <th>Status</th>
+        <th>Run Date</th>
+        <th>Finished At</th>
+        <th>Last Success</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for row in etl_summary %}
+      <tr>
+        <td>{{ row.slot or "—" }}</td>
+        <td>{{ row.source or "—" }}</td>
+        <td>
+          <span class="status-{{ row.last_status }}">{{ row.last_status }}</span>
+          {% if row.stale %}<span class="stale-badge">stale</span>{% endif %}
+        </td>
+        <td>{{ row.run_date or "—" }}</td>
+        <td class="muted">{{ row.run_finished_at or "—" }}</td>
+        <td class="muted">{{ row.last_success_run_date or "—" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+{% endblock %}

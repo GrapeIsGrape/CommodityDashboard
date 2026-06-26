@@ -31,10 +31,15 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Callable, Mapping, Optional
+from typing import Callable, Mapping, Optional, TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from common.config import load_scheduler_config
+if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
+
+from sqlalchemy import create_engine as _create_engine, text as _text
+
+from common.config import get_database_url, load_scheduler_config
 from etl import run_log
 
 logger = logging.getLogger("etl.scheduler")
@@ -307,12 +312,79 @@ def run_slot(
     return dispatch_slot(schedule, schedule.slots[slot_name], now_et, runners)
 
 
+_TRIGGER_POLL_SQL = "SELECT id, slot FROM etl_manual_trigger WHERE processed_at IS NULL LIMIT 1"
+_TRIGGER_MARK_SQL = "UPDATE etl_manual_trigger SET processed_at = now() WHERE id = :id"
+
+# Tracks whether a trigger-table error has already been logged at WARNING so the
+# loop does not spam the log on every tick when the table is absent or the DB is
+# temporarily down (AC#14).
+_trigger_error_logged = False
+
+
+def _check_manual_trigger(
+    schedule: Schedule,
+    runners: Mapping[str, SourceRunner],
+    now_et: dt.datetime,
+    heartbeat: Optional[Heartbeat] = None,
+    engine: "Optional[Engine]" = None,
+) -> None:
+    """Poll ``etl_manual_trigger`` for unprocessed rows; dispatch all slots if found.
+
+    Called at the top of each ``run_forever`` tick (AC#11).  When an unprocessed
+    row is found all configured slots are dispatched using the same
+    :func:`dispatch_slot` machinery as a scheduled tick (AC#12).  Session-guarded
+    slots still respect the ET session-window guard — a manual trigger outside
+    the window produces honest-NULL rows, not fabricated data (AC#12).  After all
+    dispatches the trigger row is marked ``processed_at = now()`` (AC#13).
+
+    DB errors (``OperationalError`` / ``ProgrammingError``) are swallowed after
+    logging once at WARNING so the scheduler loop continues uninterrupted and the
+    log is not flooded on every tick (AC#14).
+    """
+    global _trigger_error_logged
+    own_engine = engine is None
+    try:
+        if engine is None:
+            engine = _create_engine(get_database_url(), pool_pre_ping=True)
+        try:
+            with engine.connect() as conn:
+                row = conn.execute(_text(_TRIGGER_POLL_SQL)).first()
+            if row is None:
+                return
+            trigger_id = row[0]
+            logger.info(
+                "Manual ETL trigger received (id=%s slot=%s) — running all slots.",
+                trigger_id, row[1],
+            )
+            _trigger_error_logged = False
+            # Mark processed BEFORE dispatching so a second scheduler tick that
+            # fires while slots are running does not see this row as unprocessed
+            # and double-fire all ETL sources (sec-audit HIGH finding).
+            with engine.begin() as conn:
+                conn.execute(_text(_TRIGGER_MARK_SQL), {"id": trigger_id})
+            logger.info("Manual trigger id=%s marked processed; dispatching slots.", trigger_id)
+            for slot in schedule.slots.values():
+                dispatch_slot(schedule, slot, now_et, runners, heartbeat=heartbeat)
+        finally:
+            if own_engine:
+                engine.dispose()
+    except Exception:
+        if not _trigger_error_logged:
+            logger.warning(
+                "Manual trigger poll failed; skipping this tick. "
+                "Loop continues uninterrupted (AC#14).",
+                exc_info=True,
+            )
+            _trigger_error_logged = True
+
+
 def run_forever(
     runners: Optional[Mapping[str, SourceRunner]] = None,
     schedule: Optional[Schedule] = None,
     sleep: Callable[[float], None] = time.sleep,
     now_fn: Optional[Callable[[], dt.datetime]] = None,
     max_ticks: Optional[int] = None,
+    engine: "Optional[Engine]" = None,
 ) -> None:
     """Long-running in-process scheduler (Compose mode): wake once a minute,
     resolve the current ET minute, and dispatch any due slot.
@@ -335,6 +407,7 @@ def run_forever(
     ticks = 0
     while max_ticks is None or ticks < max_ticks:
         now_et = now_fn()
+        _check_manual_trigger(schedule, runners, now_et, engine=engine)
         minute_key = (now_et.year, now_et.month, now_et.day, now_et.hour, now_et.minute)
         if minute_key != last_fired_minute:
             for slot in slots_due_at(schedule, now_et):

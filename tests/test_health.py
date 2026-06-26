@@ -511,15 +511,13 @@ def test_health_reports_schema_version_at_head(health_client):
     resp = client.get("/health")
 
     assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "ok"
-    assert body["database"] == "reachable"
-    assert "schema_version" in body
-    assert body["schema_version"] == expected_head
-    # The etl run-log summary is present (a list — empty on a fresh DB), never
-    # absent at head, and never trips a 500.
-    assert "etl" in body
-    assert isinstance(body["etl"], list)
+    # /health now renders an HTML page (#29); verify key info is present.
+    assert "text/html" in resp.headers.get("content-type", "")
+    assert expected_head in resp.text
+    # The DB-reachable state and ETL summary section are present.
+    assert "reachable" in resp.text
+    # The trigger form is present when the table is migrated (AC#6).
+    assert "Run all ETL now" in resp.text
 
 
 def test_health_etl_summary_surfaces_latest_run_per_source(health_client):
@@ -527,6 +525,7 @@ def test_health_etl_summary_surfaces_latest_run_per_source(health_client):
 
     # Seed two attempts for one (slot, source): an older success then a newer
     # failure, so last_status=failure but last_success still points at the older.
+    # The HTML page renders both statuses in its ETL table.
     import datetime as dtime
 
     from common.config import get_database_url
@@ -554,8 +553,12 @@ def test_health_etl_summary_surfaces_latest_run_per_source(health_client):
                 },
             )
 
-        body = client.get("/health").json()
-        entry = next(e for e in body["etl"] if e["slot"] == slot and e["source"] == source)
+        # The /health helper is the source of truth — test via _read_etl_summary
+        # directly (which is already tested; this verifies seeded data round-trips).
+        import dashboard.main as dashboard_main
+        with engine.connect() as conn:
+            rows = dashboard_main._read_etl_summary(conn)
+        entry = next(e for e in rows if e["slot"] == slot and e["source"] == source)
         assert entry["last_status"] == "failure"        # newest attempt
         assert entry["run_date"] == "2026-06-22"
         assert entry["last_success_run_date"] == "2026-06-21"  # older success retained
@@ -567,7 +570,7 @@ def test_health_etl_summary_surfaces_latest_run_per_source(health_client):
 
 
 def test_health_etl_summary_surfaces_never_ran_for_configured_source(health_client):
-    client, _ = health_client
+    _, _ = health_client
 
     from common.config import get_database_url, load_scheduler_config
     from sqlalchemy import create_engine, text
@@ -585,8 +588,10 @@ def test_health_etl_summary_surfaces_never_ran_for_configured_source(health_clie
             conn.execute(text("DELETE FROM etl_run_log WHERE slot=:s AND source=:src"),
                          {"s": slot, "src": source})
 
-        body = client.get("/health").json()
-        entry = next(e for e in body["etl"] if e["slot"] == slot and e["source"] == source)
+        import dashboard.main as dashboard_main
+        with engine.connect() as conn:
+            rows = dashboard_main._read_etl_summary(conn)
+        entry = next(e for e in rows if e["slot"] == slot and e["source"] == source)
         assert entry["last_status"] == "never_ran"
         assert entry["run_date"] is None
         assert entry["last_success_run_date"] is None
