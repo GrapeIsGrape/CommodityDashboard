@@ -166,7 +166,7 @@ def compute_nfp_events(
                 date=actual,
                 time_et=dt.time(8, 30),
                 label="NFP (Jobs Report)",
-                affected="GC/SI, DXY → Panel A",
+                affected="GC/SI/CL/energy, DXY → Panel A/B",
                 holiday_delayed=delayed,
             ))
         if month == 12:

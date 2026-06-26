@@ -249,6 +249,17 @@ def test_nfp_first_friday_is_holiday_shifts_to_next_business_day():
     assert ev.holiday_delayed is True
 
 
+def test_nfp_affected_field_includes_energy():
+    # AC: affected must contain CL and energy, and reference Panel B.
+    start = dt.date(2026, 6, 1)
+    end = dt.date(2026, 6, 30)
+    events = compute_nfp_events(start, end)
+    assert len(events) == 1
+    assert "CL" in events[0].affected
+    assert "energy" in events[0].affected
+    assert "Panel A/B" in events[0].affected
+
+
 def test_nfp_only_one_per_month():
     # Within any given 31-day window that spans one calendar month, there is
     # at most one NFP event.
