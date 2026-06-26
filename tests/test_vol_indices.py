@@ -31,7 +31,8 @@ _DB_ENV = {
 # --- Pure level cleaning --------------------------------------------------
 
 def test_clean_level_passes_positive():
-    assert vi._clean_level(18.5) == 18.5
+    # CBOE index level divided by 100 → decimal fraction convention.
+    assert vi._clean_level(18.5) == pytest.approx(0.185)
 
 
 def test_clean_level_rejects_nan_none_and_nonpositive():
@@ -53,7 +54,7 @@ def test_build_index_rows_shapes_records_and_forces_nulls():
     rows = vi.build_index_rows("GVZ", bars)
     assert [r["symbol"] for r in rows] == ["GVZ", "GVZ"]
     assert rows[0]["snapshot_date"] == "2026-06-01"
-    assert rows[0]["atm_iv"] == 20.0
+    assert rows[0]["atm_iv"] == pytest.approx(0.20)  # 20.0 / 100
     assert rows[0]["source"] == "yfinance"
     # Vol indices: RV and the spread are always NULL.
     for r in rows:
@@ -74,8 +75,8 @@ def test_build_index_rows_holiday_nan_is_null_and_excluded_from_history():
 
     # The final 40.0 row: 20 valid prior obs (10..28, 19 of them) + current.
     last = rows[-1]
-    assert last["atm_iv"] == 40.0
-    # 40 is the max of the series -> rank 1.0; not diluted by the NaN bar.
+    assert last["atm_iv"] == pytest.approx(0.40)  # 40.0 / 100
+    # 0.40 is the max of the series -> rank 1.0; not diluted by the NaN bar.
     assert last["iv_rank"] == pytest.approx(1.0)
     assert last["iv_percentile"] == pytest.approx(1.0)
 
@@ -85,7 +86,7 @@ def test_build_index_rows_rank_null_until_min_history():
     # is still stored.
     bars = _bars(dt.date(2026, 1, 1), [20.0, 21.0, 22.0])
     rows = vi.build_index_rows("GVZ", bars)
-    assert rows[-1]["atm_iv"] == 22.0
+    assert rows[-1]["atm_iv"] == pytest.approx(0.22)  # 22.0 / 100
     assert rows[-1]["iv_rank"] is None
     assert rows[-1]["iv_percentile"] is None
 
@@ -112,9 +113,9 @@ def test_build_index_rows_rank_lookback_is_bounded_to_trailing_window():
     rows = vi.build_index_rows("GVZ", old_bar + recent)
 
     last = rows[-1]
-    assert last["atm_iv"] == 49.0
-    # Trailing window: 30..49 only -> 49 is the max -> rank 1.0, pct 1.0.
-    # (Full-history would give (49-30)/(100-30) ~= 0.27 and pct 20/21.)
+    assert last["atm_iv"] == pytest.approx(0.49)  # 49.0 / 100
+    # Trailing window: 0.30..0.49 only -> 0.49 is the max -> rank 1.0, pct 1.0.
+    # (Full-history would give (0.49-0.30)/(1.0-0.30) ~= 0.27 and pct 20/21.)
     assert last["iv_rank"] == pytest.approx(1.0)
     assert last["iv_percentile"] == pytest.approx(1.0)
 
@@ -127,8 +128,9 @@ def test_build_index_rows_in_window_history_still_counts():
     rows = vi.build_index_rows("GVZ", high_recent + recent)
 
     last = rows[-1]
-    assert last["atm_iv"] == 49.0
-    # 100.0 is still in-window -> it is the max, so 49.0 ranks below 1.0.
+    assert last["atm_iv"] == pytest.approx(0.49)  # 49.0 / 100
+    # 1.0 (100.0/100) is still in-window -> it is the max, so 0.49 ranks below 1.0.
+    # iv_rank is scale-invariant: (0.49-0.30)/(1.0-0.30) == (49-30)/(100-30).
     assert last["iv_rank"] == pytest.approx((49.0 - 30.0) / (100.0 - 30.0))
 
 
@@ -249,7 +251,7 @@ def test_rerun_upserts_value_in_place(migrated_db, monkeypatch):
         value = conn.execute(
             text("SELECT atm_iv FROM iv_metrics WHERE symbol = 'GVZ'")
         ).scalar()
-    assert float(value) == pytest.approx(25.0)
+    assert float(value) == pytest.approx(0.25)  # 25.0 / 100 — decimal convention
 
 
 def test_second_run_is_incremental_not_full_backfill(migrated_db, monkeypatch):

@@ -66,8 +66,15 @@ _DEFAULT_BACKFILL_DAYS = 1095  # ~3y; overridden by config volatility_indices.de
 # --- Pure transforms (network-free, unit-tested) -------------------------
 
 def _clean_level(level) -> Optional[float]:
-    """A published index close → a stored level, or None for a missing/NaN/<=0
-    bar. Honest NULL: we never carry forward a prior close or substitute 0."""
+    """A published index close → a stored decimal fraction, or None for a
+    missing/NaN/<=0 bar.  Honest NULL: we never carry forward or substitute 0.
+
+    CBOE vol indices quote in percentage-point units (e.g. GVZ=29.58 means
+    29.58 % annualised vol).  We divide by 100 so ``atm_iv`` is a consistent
+    decimal fraction across all rows in ``iv_metrics`` (same convention as the
+    per-underlying option-chain IV stored by ``etl/sources/iv.py``).  The
+    migration 0005_normalize_gvz_ovx rescaled all historical rows already
+    stored in the old raw-level convention."""
     if level is None:
         return None
     try:
@@ -76,7 +83,7 @@ def _clean_level(level) -> Optional[float]:
         return None
     if math.isnan(value) or value <= 0:
         return None
-    return value
+    return value / 100.0
 
 
 def build_index_rows(symbol: str, closes_by_date: list[tuple]) -> list[dict]:
