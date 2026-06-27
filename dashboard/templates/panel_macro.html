@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_panel.html" import panel %}
 {% block title %}Macro-Context Sub-Panel &middot; CommodityDashboard{% endblock %}
 
 {% block style %}
@@ -27,67 +26,6 @@
 {% endblock %}
 
 {% block content %}
-{% call panel("Macro-Context (TLT / VTI / QQQ)", "context, not commodities — see Panel A for the macro backdrop / Panel D for decisions") %}
-
-  {% if view.error %}
-    <div class="empty">Macro-context data is currently unavailable. The database could not be reached or is not yet migrated — retry shortly.</div>
-  {% elif view.is_empty %}
-    <div class="empty">No macro-context data yet. Run the prices ETL to populate this strip.</div>
-  {% else %}
-
-  <div class="caveat">
-    A compact cross-asset strip, <strong>subordinate to <a href="/panel/a">Panel A</a></strong> (TLT's driver — real/nominal rates — and the equity-vol regime already live there).
-    Headline % changes are <strong>total-return adjusted</strong> (computed off <code>adj_close</code>); the raw <code>close</code> is shown only as a broker-checkable "last / tape" level. Recomputed from current stored rows each visit.
-  </div>
-
-  <div class="regime">
-    Cross-asset tape: <strong>{{ view.regime }}</strong>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>symbol</th>
-        <th>instrument</th>
-        <th>~1m (TR)</th>
-        <th>~3m (TR)</th>
-        <th>drawdown (TR)</th>
-        <th>last / tape</th>
-        <th>as of</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in view.rows %}
-      <tr>
-        <td>{{ row.symbol }}</td>
-        <td>
-          {{ row.name }}
-          {% if row.note %}<span class="note">{{ row.note }}</span>{% endif %}
-        </td>
-        <td>
-          <span class="arrow">{{ row.one_month_arrow }}</span>
-          <span class="{{ 'no-prior' if '(no prior)' in row.one_month_label }}">{{ row.one_month_label }}</span>
-        </td>
-        <td class="secondary">
-          <span class="arrow">{{ row.three_month_arrow }}</span>
-          <span class="{{ 'no-prior' if '(no prior)' in row.three_month_label }}">{{ row.three_month_label }}</span>
-        </td>
-        <td class="secondary">{{ row.drawdown_label }}</td>
-        <td class="secondary">{{ row.close_label }} <span class="caption">last / tape</span></td>
-        <td>{{ fmt_date(row.date) }}{% if row.stale %}<span class="stale-badge">STALE</span>{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <ul class="footnotes">
-    <li>Headline ~1m/~3m figures are <strong>total-return adjusted</strong> (off <code>adj_close</code>, dividends reinvested) — distinct from the raw "last / tape" close level; the two are never combined in one figure.</li>
-    <li>Drawdown is total-return, off the trailing ~1y high (a shallow history shows the actual window used). Equity fear-gauge only — it can lead VIX.</li>
-    <li>The regime line is purely descriptive of the cross-asset tape (sign of VTI vs TLT, deadband-gated) — no correlation coefficient, no commodity call. Decisions live in <a href="/panel/d">Panel D</a>.</li>
-    <li>TLT is a duration proxy — for the rate itself see <a href="/panel/a">Panel A</a> (DFII10/DGS10). QQQ ⊂ VTI is a higher-beta/tech read; the QQQ-vs-VTI gap is not a signal.</li>
-    <li>NYSE-trading-day staleness (these are exchange-traded ETFs, not FRED reference-period series); a weekend/holiday gap is normal, not stale.</li>
-  </ul>
-
-  {% endif %}
-{% endcall %}
+{% set view_macro = view %}
+{% include "_body_panel_macro.html" %}
 {% endblock %}

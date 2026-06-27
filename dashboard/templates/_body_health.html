@@ -1,0 +1,48 @@
+{% if health_view.db_ok %}
+  <div class="status-line">Database: <span class="ok">reachable</span>{% if health_view.schema_version %} &middot; <span class="muted">schema {{ health_view.schema_version }}</span>{% endif %}</div>
+{% else %}
+  <div class="status-line">Database: <span class="error">unreachable</span></div>
+{% endif %}
+
+{% if health_view.trigger_available %}
+<div class="trigger-bar" style="margin-top:10px">
+  <form method="post" action="/health/trigger" style="display:inline">
+    <button type="submit" class="trigger-btn">Run all ETL now</button>
+  </form>
+  <span class="muted" style="font-size:12px">Triggers all configured ETL slots immediately (rate-limited to once per {{ health_view.cooldown_minutes }} minutes).</span>
+</div>
+{% endif %}
+
+{% if health_view.etl_summary is none %}
+  <div class="pre-migration" style="margin-top:10px">ETL run log not yet available (table not yet migrated).</div>
+{% elif health_view.etl_summary | length == 0 %}
+  <div class="empty">No ETL runs recorded yet.</div>
+{% else %}
+<table class="etl" style="margin-top:12px">
+  <thead>
+    <tr>
+      <th>Slot</th>
+      <th>Source</th>
+      <th>Status</th>
+      <th>Run Date</th>
+      <th>Finished At</th>
+      <th>Last Success</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in health_view.etl_summary %}
+    <tr>
+      <td>{{ row.slot or "—" }}</td>
+      <td>{{ row.source or "—" }}</td>
+      <td>
+        <span class="status-{{ row.last_status }}">{{ row.last_status }}</span>
+        {% if row.stale %}<span class="stale-badge">stale</span>{% endif %}
+      </td>
+      <td>{{ row.run_date or "—" }}</td>
+      <td class="muted">{{ row.run_finished_at or "—" }}</td>
+      <td class="muted">{{ row.last_success_run_date or "—" }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}

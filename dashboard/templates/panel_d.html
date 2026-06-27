@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_panel.html" import panel %}
 {% block title %}Panel D — Volatility &middot; CommodityDashboard{% endblock %}
 
 {% block style %}
@@ -24,67 +23,6 @@
 {% endblock %}
 
 {% block content %}
-{% call panel("Panel D — Volatility", "Where the decisions live · per-underlying ATM IV from optionable-ETF proxies. As of last expected session " ~ view.last_session.isoformat()) %}
-
-  {% if view.error %}
-    <div class="empty">Volatility data is currently unavailable. The database could not be reached or is not yet migrated — retry shortly.</div>
-  {% else %}
-
-  {% if view.indices %}
-  <div class="context-note">
-    Vol-index context / regime read — <strong>NOT tradeable underlyings</strong>.
-    A rich OVX reads as "energy-complex vol is rich, look at CL/RB/HO", never "sell OVX".
-  </div>
-  <div class="index-strip">
-    {% for ix in view.indices %}
-    <div class="index-card">
-      <div class="ix-sym">{{ ix.symbol }}
-        {% if ix.stale %}<span class="stale-badge">STALE</span>{% endif %}
-      </div>
-      <div class="ix-meta">{{ ix.name }}</div>
-      <div>level {{ fmt_pct(ix.atm_iv) }}</div>
-      <div class="ix-meta">rank {{ fmt_pct(ix.iv_rank) }} · pct {{ fmt_pct(ix.iv_percentile) }}</div>
-      <div class="ix-meta">{{ fmt_date(ix.snapshot_date) }}</div>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-
-  {% if view.is_empty %}
-    <div class="empty">No volatility snapshots yet. Run the IV / vol-index ETL to populate Panel D.</div>
-  {% elif not view.underlyings %}
-    <div class="empty">No per-underlying IV snapshots yet (index context shown above).</div>
-  {% else %}
-  <table>
-    <thead>
-      <tr>
-        <th>symbol</th>
-        <th>iv_proxy</th>
-        <th>atm_iv</th>
-        <th>iv_rank</th>
-        <th>iv_percentile</th>
-        <th>rv_30</th>
-        <th>iv_rv_spread</th>
-        <th>snapshot_date</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in view.underlyings %}
-      <tr class="{{ row.highlight }}">
-        <td>{{ row.symbol }}</td>
-        <td>{{ row.iv_proxy }}</td>
-        <td>{{ fmt_pct(row.atm_iv) }}</td>
-        <td class="{{ 'accruing' if row.iv_rank is none }}">{{ row.rank_label }}</td>
-        <td class="{{ 'accruing' if row.iv_percentile is none }}">{{ row.percentile_label }}</td>
-        <td>{{ fmt_pct(row.rv_30) }}</td>
-        <td>{{ fmt_pct(row.iv_rv_spread) }}</td>
-        <td>{{ fmt_date(row.snapshot_date) }}{% if row.stale %}<span class="stale-badge">STALE</span>{% endif %}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-
-  {% endif %}
-{% endcall %}
+{% set view_d = view %}
+{% include "_body_panel_d.html" %}
 {% endblock %}

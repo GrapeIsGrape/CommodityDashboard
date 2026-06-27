@@ -1,0 +1,74 @@
+{% from "_panel.html" import panel %}
+{% call panel("Panel A — Macro / Cross-Asset", "Cross-asset weather backdrop · context, not decisions (Panel D is where decisions live)") %}
+
+  {% if view_a.error %}
+    <div class="empty">Macro data is currently unavailable. The database could not be reached or is not yet migrated — retry shortly.</div>
+  {% elif view_a.is_empty %}
+    <div class="empty">No macro data yet. Run the FRED ETL to populate Panel A.</div>
+  {% else %}
+
+  <div class="caveat">
+    USD shown is <strong>DTWEXBGS — DXY proxy (broad trade-weighted USD)</strong>, NOT the 6-currency ICE DXY;
+    levels and magnitudes differ. Changes are recomputed from current stored rows each visit (FRED revisions move them legitimately).
+  </div>
+
+  {% if view_a.usd_clause or view_a.real_rate_clause %}
+  <ul class="clauses">
+    {% if view_a.usd_clause %}<li>{{ view_a.usd_clause }}</li>{% endif %}
+    {% if view_a.real_rate_clause %}<li>{{ view_a.real_rate_clause }}</li>{% endif %}
+  </ul>
+  {% endif %}
+
+  {% for group in view_a.groups %}
+    {% if group.rows %}
+    {% set primary = group.key in ['usd', 'real_rates'] %}
+    {% set compact = group.key == 'growth_labor' %}
+    <div class="bucket {{ 'bucket-primary' if primary }} {{ 'bucket-compact' if compact }}">
+      <div class="bucket-head">
+        <h3 class="bucket-title">{{ group.title }}</h3>
+        <span class="bucket-sub">{{ group.subtitle }}</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>series</th>
+            <th>label</th>
+            <th>level</th>
+            <th>change</th>
+            <th>secondary</th>
+            <th>as of</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in group.rows %}
+          <tr>
+            <td>{{ row.series_id }} <span class="freq-tag">{{ row.freq }}</span></td>
+            <td>{{ row.label }}{% if row.band %}<span class="band-tag">{{ row.band }} regime</span>{% endif %}</td>
+            <td>{{ row.level_label }}</td>
+            <td>
+              <span class="arrow">{{ row.headline_arrow }}</span>
+              <span class="{{ 'no-prior' if '(no prior)' in row.headline_label }}">{{ row.headline_label }}</span>
+              <span class="caption">{{ row.headline_caption }}</span>
+            </td>
+            <td class="secondary">
+              {% for cap, val in row.secondary %}{{ cap }} {{ val }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </td>
+            <td>{{ fmt_date(row.date) }}{% if row.stale %}<span class="stale-badge">STALE</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  <ul class="footnotes">
+    <li>DTWEXBGS is the broad trade-weighted dollar (DXY <em>proxy</em>) — not ICE DXY; magnitudes differ.</li>
+    <li>10y real yield is FRED's DFII10 shown directly (not recomputed); the breakeven identity is T10YIE ≈ DGS10 − DFII10.</li>
+    <li>Realized-inflation rows headline YoY % (from the stored 12-months-prior row); the raw ~310 index level is secondary.</li>
+    <li>VIX is the S&amp;P implied-vol / equity-vol regime — cross-asset context, not a commodity vol metric and not a rich/cheap signal. For commodity vol see <a href="/panel/d">Panel D</a> (GVZ/OVX).</li>
+    <li>Frequency-aware staleness: monthly flagged only when materially overdue, quarterly later still; a monthly print a few weeks old is normal cadence.</li>
+  </ul>
+
+  {% endif %}
+{% endcall %}

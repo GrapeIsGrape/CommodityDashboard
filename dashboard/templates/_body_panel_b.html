@@ -1,0 +1,82 @@
+{% from "_panel.html" import panel %}
+{% call panel("Panel B — Fundamentals / Inventory", "Change &amp; position-in-own-history · context, not decisions (Panel D is where decisions live)") %}
+
+  {% if view_b.error %}
+    <div class="empty">Fundamentals data is currently unavailable. The database could not be reached or is not yet migrated — retry shortly.</div>
+  {% elif view_b.is_empty %}
+    <div class="empty">No inventory data yet. Run the EIA / USDA ETL to populate Panel B.</div>
+  {% else %}
+
+  <div class="caveat">
+    <strong>Change is the signal, not the level.</strong> A raw stock level is meaningless alone —
+    rows headline the weekly build/draw (energy) or YoY (grains), with the absolute level secondary.
+    The position-in-own-history percentile is <strong>NOT seasonally adjusted and NOT the EIA 5-yr band</strong>;
+    it is each series vs its own same-period stored history{% if view_b.seasonality_mode == 'yoy' %} (v1 primary = Δ vs same period last year){% endif %}.
+    Deltas are recomputed from current stored rows each visit (EIA revises prior weeks).
+  </div>
+
+  {% for group in view_b.groups %}
+    {% if group.rows %}
+    {% set primary = group.key == 'energy_stocks' %}
+    {% set muted = group.key in ['energy_flow', 'grain_production'] %}
+    <div class="bucket {{ 'bucket-primary' if primary }} {{ 'bucket-muted' if muted }}">
+      <div class="bucket-head">
+        <h3 class="bucket-title">{{ group.title }}</h3>
+        <span class="bucket-sub">{{ group.subtitle }}</span>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>series</th>
+            <th>label</th>
+            <th>headline change</th>
+            <th>level</th>
+            <th>secondary</th>
+            <th>own-hist %ile</th>
+            <th>as of</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in group.rows %}
+          <tr>
+            <td>{{ row.series_id }} <span class="cadence-tag">{{ row.cadence }}</span></td>
+            <td>{{ row.label }}{% if row.is_flow %}<span class="flow-tag">FLOW (per-day rate)</span>{% endif %}</td>
+            <td>
+              <span class="arrow">{{ row.headline_arrow }}</span>
+              <span class="{{ 'no-prior' if '(no prior)' in row.headline_label }}">{{ row.headline_label }}</span>
+              <span class="caption">{{ row.headline_caption }}</span>
+            </td>
+            <td>
+              {{ row.level_label }}
+              {% if row.capacity_pct_label %}<span class="capacity-pct">{{ row.capacity_pct_label }}</span>{% endif %}
+              {% if row.cushing_band == 'near_bottom' %}<span class="cushing-badge cushing-near-bottom">{{ row.cushing_band_label }}</span>
+              {% elif row.cushing_band == 'low' %}<span class="cushing-badge cushing-low">{{ row.cushing_band_label }}</span>{% endif %}
+            </td>
+            <td class="secondary">
+              {% for cap, val in row.secondary %}{{ cap }} {{ val }}{% if not loop.last %} · {% endif %}{% endfor %}
+            </td>
+            <td>
+              <span class="{{ 'accruing' if 'accruing' in row.percentile_label }}{{ ' verdict-tight' if row.verdict == 'tight' }}{{ ' verdict-loose' if row.verdict == 'loose' }}">{{ row.percentile_label }}</span>
+              {% if row.translation %}<div class="translation">{{ row.translation }}</div>{% endif %}
+            </td>
+            <td>{{ fmt_date(row.date) }}{% if row.stale %}<span class="stale-badge">STALE</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  {% endfor %}
+
+  <ul class="footnotes">
+    <li>Energy stocks headline the <strong>weekly build(+)/draw(−)</strong> in the native unit (nat-gas as injection/withdrawal); Δ vs same week last year is shown alongside.</li>
+    <li>Flow proxies (crude field production, products supplied) are <strong>per-day rates, NOT inventory</strong> — they never get a build/draw or a tight/loose verdict; only a labelled week-over-week rate change.</li>
+    <li>The own-history percentile is each series vs its <strong>own same-period stored history — not seasonally adjusted, NOT the EIA 5-yr band</strong>; below the accrual minimum it shows <em>— (accruing M/N)</em> with no verdict.</li>
+    <li><strong>Grain coverage is thin</strong>: 3 annual production + 3 quarterly stocks only. WASDE balance sheet and weekly Crop Progress/Condition are deferred — there is no stocks-to-use here and grain fundamentals are NOT fully covered.</li>
+    <li>Staleness is cadence-bucketed: weekly EIA is release-aware (petroleum Wed / nat-gas Thu, +1 day after a Monday holiday); quarterly/annual USDA are "stale by design" between reports and are not flagged red.</li>
+    <li><strong>Cushing only</strong> carries a "% of operable shell capacity" and a near-tank-bottom badge — it is the WTI/CL physical delivery point, the one tank where the absolute level signals a squeeze/backwardation setup. Operable shell (~76M bbl) and the tank-bottom region (~20M bbl) are last-known config constants (EIA publishes them separately, semi-annually); no other tank gets this. With no configured capacity the figure is simply omitted.</li>
+    <li>Inventory tension is fundamentals <strong>context</strong> (tight → upside tail/move risk → vol bid). The decision lives in <a href="/panel/d">Panel D</a> (volatility).</li>
+  </ul>
+
+  {% endif %}
+{% endcall %}

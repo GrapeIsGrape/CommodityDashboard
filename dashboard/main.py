@@ -202,13 +202,61 @@ templates.env.globals["fmt_price"] = panel_c.format_price
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     now_et = dt.datetime.now(ET)
+    today_et = now_et.date()
+
+    # --- Release calendar strip ------------------------------------------
     try:
         cal_config = load_release_calendar()
         events, unconfigured_types = upcoming_events(now_et, cal_config)
     except Exception:
         logger.exception("Release calendar computation failed; rendering empty strip")
         events, unconfigured_types = [], []
-    today_et = now_et.date()
+
+    # --- Per-panel view models (each isolated: one failing never 500s the page) ---
+    try:
+        view_d = panel_d.build_view(engine)
+    except Exception:
+        logger.exception("Panel D build_view failed unexpectedly in unified index")
+        view_d = panel_d.PanelDView(
+            underlyings=[], indices=[],
+            last_session=panel_d.last_expected_session(today_et), error=True,
+        )
+
+    try:
+        view_c = panel_c.build_view(engine)
+        panel_c_lookback_weeks = panel_c.COT_INDEX_LOOKBACK_WEEKS
+    except Exception:
+        logger.exception("Panel C build_view failed unexpectedly in unified index")
+        view_c = _panel_c_error_view(today_et)
+        panel_c_lookback_weeks = panel_c.COT_INDEX_LOOKBACK_WEEKS
+
+    try:
+        view_a = panel_a.build_view(engine)
+    except Exception:
+        logger.exception("Panel A build_view failed unexpectedly in unified index")
+        view_a = _panel_a_error_view(today_et)
+
+    try:
+        view_b = panel_b.build_view(engine)
+    except Exception:
+        logger.exception("Panel B build_view failed unexpectedly in unified index")
+        view_b = _panel_b_error_view()
+
+    try:
+        view_macro = panel_macro.build_view(engine)
+    except Exception:
+        logger.exception("Panel macro build_view failed unexpectedly in unified index")
+        view_macro = _panel_macro_error_view(today_et)
+
+    try:
+        view_sentiment = panel_sentiment.build_view(engine)
+    except Exception:
+        logger.exception("Panel sentiment build_view failed unexpectedly in unified index")
+        view_sentiment = _panel_sentiment_error_view()
+
+    # --- Health data (DB status + ETL summary) ---------------------------
+    health_view = _build_health_view(now_et)
+
     return templates.TemplateResponse(
         request,
         "index.html",
@@ -218,7 +266,96 @@ def index(request: Request) -> HTMLResponse:
             "tomorrow_et": today_et + dt.timedelta(days=1),
             "calendar_events": events,
             "unconfigured_cal_types": unconfigured_types,
+            # panel views (namespaced so partials can be {% include %}d)
+            "view_d": view_d,
+            "view_c": view_c,
+            "panel_c_lookback_weeks": panel_c_lookback_weeks,
+            "view_a": view_a,
+            "view_b": view_b,
+            "view_macro": view_macro,
+            "view_sentiment": view_sentiment,
+            "health_view": health_view,
         },
+    )
+
+
+def _panel_c_error_view(today: dt.date) -> "panel_c.PanelCView":
+    """Return a minimal Panel C view in the error state (no COT/curve rows)."""
+    return panel_c.PanelCView(
+        cot_rows=[],
+        curve_cards=[],
+        expected_report_date=panel_c.expected_cot_report_date(today),
+        error=True,
+    )
+
+
+def _panel_a_error_view(today: dt.date) -> "panel_a.PanelAView":
+    """Return a minimal Panel A view in the error state."""
+    return panel_a.PanelAView(
+        groups=[],
+        last_session=panel_a.last_expected_session(today),
+        error=True,
+    )
+
+
+def _panel_b_error_view() -> "panel_b.PanelBView":
+    """Return a minimal Panel B view in the error state."""
+    return panel_b.PanelBView(
+        groups=[],
+        seasonality_mode=panel_b.ACTIVE_SEASONALITY_MODE,
+        error=True,
+    )
+
+
+def _panel_macro_error_view(today: dt.date) -> "panel_macro.PanelMacroView":
+    """Return a minimal macro-context view in the error state."""
+    return panel_macro.PanelMacroView(
+        rows=[],
+        last_session=panel_macro.last_expected_session(today),
+        error=True,
+    )
+
+
+def _panel_sentiment_error_view() -> "panel_sentiment.PanelSentimentView":
+    """Return a minimal sentiment view in the UNAVAILABLE (error) state."""
+    return panel_sentiment.PanelSentimentView(articles=[], error=True)
+
+
+class _HealthView:
+    """Minimal data container for health info surfaced in the unified index."""
+
+    def __init__(self, db_ok, schema_version, etl_summary, trigger_available, cooldown_minutes):
+        self.db_ok = db_ok
+        self.schema_version = schema_version
+        self.etl_summary = etl_summary
+        self.trigger_available = trigger_available
+        self.cooldown_minutes = cooldown_minutes
+
+
+def _build_health_view(now_et: dt.datetime) -> "_HealthView":
+    """Read DB status + ETL summary for the unified index health card.
+
+    Never raises: DB errors degrade to db_ok=False, etl_summary=None.
+    """
+    db_ok = False
+    schema_version = None
+    etl_summary = None
+    trigger_available = False
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            db_ok = True
+            schema_version = _read_schema_version(conn)
+            etl_summary = _read_etl_summary(conn, now_et=now_et)
+            trigger_available = _is_trigger_table_reachable(conn)
+    except Exception:
+        logger.exception("Database health check failed in unified index")
+    return _HealthView(
+        db_ok=db_ok,
+        schema_version=schema_version,
+        etl_summary=etl_summary,
+        trigger_available=trigger_available,
+        cooldown_minutes=_TRIGGER_COOLDOWN_MINUTES,
     )
 
 

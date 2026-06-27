@@ -2,62 +2,157 @@
 {% block title %}CommodityDashboard{% endblock %}
 
 {% block style %}
-  .nav-links { margin-bottom: 28px; }
-  .nav-links a { margin-right: 16px; font-size: 14px; }
-
-  .cal-section { margin-top: 8px; }
+  /* ---- Release calendar ---- */
+  .cal-section { margin-bottom: 28px; }
   .cal-title { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
   .cal-note { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
   .cal-warn { color: #e6a040; font-size: 12px; margin-bottom: 8px; }
-
   .cal-table { width: 100%; border-collapse: collapse; }
-  .cal-table th {
-    text-align: left; padding: 5px 10px;
-    border-bottom: 1px solid var(--line);
-    color: var(--muted); font-weight: 600; font-size: 12px;
-  }
-  .cal-table td {
-    padding: 6px 10px; border-bottom: 1px solid var(--line);
-    white-space: nowrap; font-size: 13px;
-  }
+  .cal-table th { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: 12px; }
+  .cal-table td { padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; font-size: 13px; }
   .cal-table td.affected { color: var(--muted); font-size: 12px; white-space: normal; }
-
   .day-label { font-weight: 700; }
   .day-today  { color: #5aa9ff; }
   .day-tomorrow { color: #88d8b0; }
-
   tr.elapsed td { color: var(--muted); text-decoration: line-through; }
-  tr.elapsed .no-strike {
-    text-decoration: none;
-  }
-  .elapsed-badge {
-    display: inline-block;
-    font-size: 11px; color: var(--muted);
-    background: #2a3340; padding: 1px 5px; border-radius: 3px; margin-left: 4px;
-  }
+  tr.elapsed .no-strike { text-decoration: none; }
+  .elapsed-badge { display: inline-block; font-size: 11px; color: var(--muted); background: #2a3340; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
   tr.de-emphasized td { color: var(--muted); font-size: 12px; }
   tr.de-emphasized td.affected { font-size: 11px; }
-
-  .holiday-badge {
-    font-size: 11px; color: #e6a040;
-    background: #2a2010; padding: 1px 5px; border-radius: 3px; margin-left: 4px;
-  }
+  .holiday-badge { font-size: 11px; color: #e6a040; background: #2a2010; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
   .cot-note { color: var(--muted); font-size: 11px; margin-left: 4px; }
   .empty-cal { color: var(--muted); padding: 12px 0; font-size: 13px; }
+
+  /* ---- Collapse/expand toolbar ---- */
+  .section-toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
+  .toolbar-btn { background: #1a2535; border: 1px solid var(--line); color: var(--muted); padding: 5px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; }
+  .toolbar-btn:hover { background: #243040; color: var(--fg); }
+
+  /* ---- Collapsible section cards (<details>) ---- */
+  details.section-card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 18px; }
+  details.section-card > summary { list-style: none; cursor: pointer; padding: 12px 18px; font-size: 15px; font-weight: 600; user-select: none; display: flex; align-items: center; gap: 8px; }
+  details.section-card > summary::-webkit-details-marker { display: none; }
+  details.section-card > summary::before { content: "▼"; font-size: 11px; color: var(--muted); transition: transform 0.15s; display: inline-block; }
+  details.section-card:not([open]) > summary::before { transform: rotate(-90deg); }
+  details.section-card > .card-body { padding: 0 18px 18px; border-top: 1px solid var(--line); }
+
+  /* ---- Panel styles (shared across all panels) ---- */
+  .panel { background: var(--panel); padding: 0; margin-bottom: 0; }
+  .panel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; padding-top: 14px; }
+  .panel-title { margin: 0; font-size: 15px; }
+  .panel-sub { color: var(--muted); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  .empty { color: var(--muted); padding: 14px 0; }
+  .stale-badge { background: var(--stale); color: var(--stale-fg); font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  .accruing { color: var(--muted); }
+  .footnotes { color: var(--muted); font-size: 11px; margin-top: 14px; line-height: 1.6; }
+  .footnotes li { margin-bottom: 2px; }
+  .caveat { color: #5aa9ff; font-size: 12px; margin-bottom: 12px; }
+  .context-note { color: #5aa9ff; font-size: 12px; margin-bottom: 12px; }
+  .arrow { color: var(--muted); font-weight: 700; }
+  .caption { color: var(--muted); font-size: 11px; }
+  .secondary { color: var(--muted); font-size: 12px; }
+  .no-prior { color: var(--muted); font-style: italic; }
+
+  /* ---- Panel D styles ---- */
+  tbody tr.sell-candidate td { background: var(--sell); color: var(--sell-fg); font-weight: 700; }
+  tbody tr.rich-rv-catching-up td { background: var(--amber); color: var(--amber-fg); }
+  .index-strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
+  .index-card { background: #15202e; border: 1px dashed #3a5a7a; border-radius: 6px; padding: 10px 14px; min-width: 150px; }
+  .index-card .ix-sym { font-weight: 700; }
+  .index-card .ix-meta { color: var(--muted); font-size: 12px; }
+
+  /* ---- Panel A styles ---- */
+  .bucket { margin-bottom: 22px; }
+  .bucket-head { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 8px; }
+  .bucket-title { font-size: 14px; font-weight: 700; margin: 0; }
+  .bucket-sub { color: var(--muted); font-size: 12px; }
+  .bucket-primary .bucket-title { font-size: 15px; }
+  .bucket-primary { border-left: 3px solid #5aa9ff; padding-left: 12px; }
+  .bucket-compact td, .bucket-compact th { padding: 4px 10px; font-size: 13px; }
+  .freq-tag { color: var(--muted); font-size: 11px; }
+  .band-tag { color: var(--muted); font-size: 11px; border: 1px solid var(--line); padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+  .clauses { color: var(--muted); font-size: 12px; margin-bottom: 12px; line-height: 1.6; }
+  .clauses li { margin-bottom: 2px; }
+
+  /* ---- Panel B styles ---- */
+  .bucket-muted td, .bucket-muted th { padding: 4px 10px; font-size: 12px; color: var(--muted); }
+  .bucket-muted .bucket-title { color: var(--muted); }
+  .verdict-tight { color: #ffb199; }
+  .verdict-loose { color: #8fd0ff; }
+  .translation { color: var(--muted); font-size: 11px; }
+  .capacity-pct { color: var(--muted); font-size: 11px; display: block; }
+  .cushing-badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; display: inline-block; margin-top: 2px; }
+  .cushing-near-bottom { background: #3a2326; color: #ffb199; border: 1px solid #ffb199; }
+  .cushing-low { color: #ffe8a3; border: 1px solid var(--line); }
+  .cadence-tag { color: var(--muted); font-size: 11px; }
+  .flow-tag { color: #ffe8a3; font-size: 11px; border: 1px solid var(--line); padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+
+  /* ---- Panel C styles ---- */
+  tbody tr.crowded-long td { background: var(--sell); color: var(--sell-fg); font-weight: 700; }
+  tbody tr.crowded-short td { background: #7a1f5a; color: #ffd6f0; font-weight: 700; }
+  .strip { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+  .curve-card { background: #15202e; border: 1px solid #3a5a7a; border-radius: 6px; padding: 10px 14px; min-width: 160px; }
+  .curve-card .cv-sym { font-weight: 700; }
+  .curve-card .cv-meta { color: var(--muted); font-size: 12px; }
+  .curve-card.backwardation { border: 2px solid #ff7a59; background: #2e1a15; }
+  .curve-card.backwardation .cv-struct { color: #ffb199; font-weight: 700; text-transform: uppercase; }
+  .curve-card.contango .cv-struct { color: #8fd0ff; }
+  .curve-card.flat .cv-struct { color: var(--muted); }
+  .curve-card.no-curve { border-style: dashed; }
+  .curve-card.no-curve .cv-struct { color: var(--muted); font-style: italic; }
+  .legend { color: var(--muted); font-size: 12px; margin: 8px 0 14px; }
+  .legend .swatch-long { color: var(--sell-fg); background: var(--sell); padding: 1px 6px; border-radius: 4px; }
+  .legend .swatch-short { color: #ffd6f0; background: #7a1f5a; padding: 1px 6px; border-radius: 4px; }
+  td.idx-long { color: var(--sell-fg); }
+  td.idx-short { color: #ffd6f0; }
+
+  /* ---- Panel Macro styles ---- */
+  .note { color: var(--muted); font-size: 11px; display: block; }
+  .regime { font-size: 13px; border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; margin-bottom: 14px; color: var(--muted); }
+  .regime strong { color: inherit; }
+
+  /* ---- Panel Sentiment styles ---- */
+  .placeholder { color: var(--muted); padding: 24px 0; line-height: 1.6; }
+  .placeholder strong { color: var(--fg); }
+  .unavailable { color: var(--stale-fg); background: var(--stale); border-radius: 6px; padding: 16px 18px; line-height: 1.6; }
+  .article { border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .article-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .headline { font-size: 14px; font-weight: 600; }
+  .ts { color: var(--muted); font-size: 12px; }
+  .ts-source { color: var(--muted); font-size: 11px; font-style: italic; }
+  .url { font-size: 12px; word-break: break-all; }
+  table.scores { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  table.scores th, table.scores td { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.scores thead th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.score { text-align: right; white-space: nowrap; }
+  .reasoning { color: var(--fg); font-size: 13px; }
+  .no-scores { color: var(--muted); font-size: 12px; font-style: italic; margin-top: 6px; }
+
+  /* ---- Health card styles ---- */
+  .status-line { font-size: 14px; margin-bottom: 6px; }
+  .ok    { color: #88d8b0; }
+  .error { color: #ff7b72; }
+  .trigger-bar { margin-bottom: 12px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .trigger-btn { background: #1f3a5a; border: 1px solid #3a6a9a; color: #a8d0f0; padding: 7px 16px; border-radius: 5px; font-size: 13px; cursor: pointer; }
+  .trigger-btn:hover { background: #2a4f7a; }
+  table.etl { width: 100%; border-collapse: collapse; }
+  table.etl th { text-align: left; padding: 5px 10px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; font-size: 12px; }
+  table.etl td { padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 13px; white-space: nowrap; }
+  .status-success { color: #88d8b0; }
+  .status-failure { color: #ff7b72; font-weight: 700; }
+  .status-skipped { color: var(--muted); }
+  .status-never_ran { color: #ffe8a3; }
+  .muted { color: var(--muted); }
+  .pre-migration { color: var(--muted); font-size: 13px; font-style: italic; }
 {% endblock %}
 
 {% block content %}
 
-<div class="nav-links">
-  <a href="/panel/a">Panel A — Macro / Cross-Asset</a>
-  <a href="/panel/b">Panel B — Fundamentals / Inventory</a>
-  <a href="/panel/c">Panel C — Positioning &amp; Flow</a>
-  <a href="/panel/d">Panel D — Volatility</a>
-  <a href="/panel/macro">Macro-Context (TLT/VTI/QQQ)</a>
-  <a href="/panel/sentiment">Sentiment (placeholder)</a>
-  <a href="/health">/health</a>
-</div>
-
+{# ---- Release calendar strip -------------------------------------------- #}
 <div class="cal-section">
   <div class="cal-title">Upcoming Releases — next 7 days</div>
   <div class="cal-note">Times are ET. COT rows are positioning reads — not vol-moving events.</div>
@@ -72,11 +167,7 @@
   <table class="cal-table">
     <thead>
       <tr>
-        <th>Date</th>
-        <th>Day</th>
-        <th>Time (ET)</th>
-        <th>Release</th>
-        <th>Affected</th>
+        <th>Date</th><th>Day</th><th>Time (ET)</th><th>Release</th><th>Affected</th>
       </tr>
     </thead>
     <tbody>
@@ -88,13 +179,9 @@
       <tr class="{{ row_class }}">
         <td>{{ ev.date.isoformat() }}</td>
         <td>
-          {% if is_today %}
-            <span class="day-label day-today">TODAY</span>
-          {% elif is_tomorrow %}
-            <span class="day-label day-tomorrow">TOMORROW</span>
-          {% else %}
-            {{ ev.date.strftime("%A") }}
-          {% endif %}
+          {% if is_today %}<span class="day-label day-today">TODAY</span>
+          {% elif is_tomorrow %}<span class="day-label day-tomorrow">TOMORROW</span>
+          {% else %}{{ ev.date.strftime("%A") }}{% endif %}
         </td>
         <td>
           {{ ev.time_et.strftime("%H:%M") }}
@@ -114,5 +201,74 @@
   <div class="empty-cal">No scheduled releases in the next 7 days.</div>
   {% endif %}
 </div>
+
+{# ---- Collapse / Expand All toolbar ------------------------------------- #}
+<div class="section-toolbar">
+  <button class="toolbar-btn" id="collapse-all-btn" onclick="setAllCards(false)">Collapse All</button>
+  <button class="toolbar-btn" id="expand-all-btn" onclick="setAllCards(true)">Expand All</button>
+</div>
+<script>
+function setAllCards(open) {
+  document.querySelectorAll('details.section-card').forEach(function(el) {
+    el.open = open;
+  });
+}
+</script>
+
+{# ---- Panel D — Volatility (decisions live here) ------------------------ #}
+<details class="section-card" open id="section-panel-d">
+  <summary>Panel D — Volatility <span style="font-size:12px;color:var(--muted);font-weight:400;margin-left:8px">decisions live here</span></summary>
+  <div class="card-body">
+    {% include "_body_panel_d.html" %}
+  </div>
+</details>
+
+{# ---- Panel C — Positioning & Flow -------------------------------------- #}
+<details class="section-card" open id="section-panel-c">
+  <summary>Panel C — Positioning &amp; Flow <span style="font-size:12px;color:var(--muted);font-weight:400;margin-left:8px">CFTC COT + energy curve</span></summary>
+  <div class="card-body">
+    {% include "_body_panel_c.html" %}
+  </div>
+</details>
+
+{# ---- Panel A — Macro / Cross-Asset ------------------------------------- #}
+<details class="section-card" open id="section-panel-a">
+  <summary>Panel A — Macro / Cross-Asset <span style="font-size:12px;color:var(--muted);font-weight:400;margin-left:8px">cross-asset weather backdrop</span></summary>
+  <div class="card-body">
+    {% include "_body_panel_a.html" %}
+  </div>
+</details>
+
+{# ---- Panel B — Fundamentals / Inventory -------------------------------- #}
+<details class="section-card" open id="section-panel-b">
+  <summary>Panel B — Fundamentals / Inventory <span style="font-size:12px;color:var(--muted);font-weight:400;margin-left:8px">EIA energy + USDA grains</span></summary>
+  <div class="card-body">
+    {% include "_body_panel_b.html" %}
+  </div>
+</details>
+
+{# ---- Macro-Context sub-panel (TLT/VTI/QQQ) ----------------------------- #}
+<details class="section-card" open id="section-panel-macro">
+  <summary>Macro-Context (TLT / VTI / QQQ) <span style="font-size:12px;color:var(--muted);font-weight:400;margin-left:8px">context, not commodities</span></summary>
+  <div class="card-body">
+    {% include "_body_panel_macro.html" %}
+  </div>
+</details>
+
+{# ---- Sentiment (placeholder) ------------------------------------------- #}
+<details class="section-card" open id="section-panel-sentiment">
+  <summary>Sentiment (news / LLM) <span style="font-size:12px;color:var(--muted);font-weight:400;margin-left:8px">placeholder — awaiting Writer-2</span></summary>
+  <div class="card-body">
+    {% include "_body_panel_sentiment.html" %}
+  </div>
+</details>
+
+{# ---- Health & ETL Status ----------------------------------------------- #}
+<details class="section-card" open id="section-health">
+  <summary>Health &amp; ETL Status</summary>
+  <div class="card-body">
+    {% include "_body_health.html" %}
+  </div>
+</details>
 
 {% endblock %}

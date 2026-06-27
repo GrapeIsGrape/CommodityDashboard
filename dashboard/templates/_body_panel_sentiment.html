@@ -1,0 +1,62 @@
+{% from "_panel.html" import panel %}
+{% call panel("Sentiment (news / LLM)", "placeholder — populated by a separate Writer-2 project (not built here)") %}
+
+  {% if view_sentiment.is_unavailable %}
+    <div class="unavailable">
+      Sentiment data is currently <strong>unavailable</strong>. The database could not be reached, or the
+      <code>sentiment_*</code> tables are not yet migrated — this is a service/DB condition, not the normal empty state. Retry shortly.
+    </div>
+  {% elif view_sentiment.is_empty %}
+    <div class="placeholder">
+      <strong>Awaiting Writer-2 — no sentiment data yet.</strong><br>
+      The <code>sentiment_articles</code> / <code>sentiment_scores</code> tables exist but are empty. Sentiment is produced by a
+      <strong>separate, not-yet-built project</strong> (a scheduled LLM news-sentiment task — CLAUDE.md §1, "1 DB, 2 writers"):
+      this dashboard only reserves the room and renders whatever that writer eventually stores. No rows are fabricated here.
+    </div>
+  {% else %}
+
+  {% for article in view_sentiment.articles %}
+  <div class="article">
+    <div class="article-head">
+      <span class="headline">{{ article.headline }}</span>
+      <span class="ts">{{ article.timestamp }}</span>
+      {% if article.timestamp_source != "published" %}<span class="ts-source">({{ article.timestamp_source }})</span>{% endif %}
+    </div>
+    <div class="url">{% if article.href %}<a href="{{ article.href }}" rel="noopener noreferrer">{{ article.url }}</a>{% else %}{{ article.url }}{% endif %}</div>
+
+    {% if article.has_scores %}
+    <table class="scores">
+      <thead>
+        <tr>
+          <th>commodity</th>
+          <th class="score">score</th>
+          <th>reasoning</th>
+          <th>model</th>
+          <th>scored</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in article.scores %}
+        <tr>
+          <td>{{ s.commodity }}</td>
+          <td class="score">{{ s.score }}</td>
+          <td class="reasoning">{{ s.reasoning }}</td>
+          <td>{{ s.model }}</td>
+          <td>{{ s.scored_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="no-scores">Not yet scored.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <ul class="footnotes">
+    <li>Sentiment is written by a <strong>separate Writer-2 project</strong>; this panel is read-only and renders defensively against whatever that writer stores. NULL <code>score</code> shows as <code>—</code> (distinct from a real neutral <code>0</code>).</li>
+    <li>Each article surfaces the model's <strong>reasoning</strong>, not just the score (CLAUDE.md §5). Timestamps fall back <code>published</code> &rarr; <code>fetched</code> &rarr; <code>created</code>.</li>
+  </ul>
+
+  {% endif %}
+{% endcall %}
